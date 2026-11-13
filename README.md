@@ -66,74 +66,112 @@ flowchart TD
 
 ---
 
-## 📁 Repository Structure
+## 📁 Repository & Folder Structure
 
 ```
 cloud-smart-parking-system/
-├── frontend/                     # Modern responsive web dashboard
-│   ├── index.html                # Landing page & system telemetry
-│   ├── dashboard.html            # Real-time parking slot grid & KPIs
-│   ├── booking.html              # Slot reservation & cancellation portal
-│   ├── admin.html                # Admin console & Chart.js analytics
+
+├── frontend/
+│   ├── index.html
+│   ├── dashboard.html
+│   ├── booking.html
+│   ├── admin.html
+│   │
 │   ├── css/
-│   │   ├── style.css             # Theme tokens & core UI elements
-│   │   ├── dashboard.css         # Parking lot bays & vehicle SVG styles
-│   │   └── responsive.css        # Mobile & tablet layout rules
-│   └── js/
-│       ├── api.js                # Unified client fetch wrapper & toasts
-│       ├── dashboard.js          # Live polling & slot inspection modal
-│       ├── booking.js            # Reservation transactions & history
-│       └── admin.js              # Chart.js analytics & slot CRUD
+│   │   ├── style.css
+│   │   ├── dashboard.css
+│   │   └── responsive.css
+│   │
+│   ├── js/
+│   │   ├── api.js
+│   │   ├── dashboard.js
+│   │   ├── booking.js
+│   │   └── admin.js
+│   │
+│   └── assets/
+│       ├── images/
+│       └── icons/
 │
-├── backend/                      # Node.js Express REST API
-│   ├── server.js                 # HTTP server & static frontend serving
-│   ├── package.json              # Backend dependencies & test scripts
-│   ├── .env.example              # Environment variables template
+├── backend/
+│   ├── server.js
+│   ├── package.json
+│   ├── .env.example
+│   │
 │   ├── config/
-│   │   ├── aws.js                # AWS SDK v3 client configuration
-│   │   └── dynamodb.js           # DynamoDB client & local store adapter
-│   ├── controllers/              # Request handlers
-│   ├── services/                 # Business logic & atomic transactions
-│   ├── routes/                   # REST routing modules
-│   ├── middleware/               # Admin authentication & user context
-│   ├── models/                   # Parking data schema & validators
-│   ├── scripts/
-│   │   ├── setupDynamoDB.js      # Creates DynamoDB tables & GSIs
-│   │   └── seedData.js           # Seeds initial slots
-│   └── tests/
-│       └── api.test.js           # Automated integration test suite
+│   │   ├── dynamodb.js
+│   │   └── aws.js
+│   │
+│   ├── routes/
+│   │   ├── parkingRoutes.js
+│   │   ├── bookingRoutes.js
+│   │   ├── adminRoutes.js
+│   │   └── detectionRoutes.js
+│   │
+│   ├── controllers/
+│   │   ├── parkingController.js
+│   │   ├── bookingController.js
+│   │   ├── adminController.js
+│   │   └── detectionController.js
+│   │
+│   ├── services/
+│   │   ├── parkingService.js
+│   │   ├── bookingService.js
+│   │   └── detectionService.js
+│   │
+│   ├── middleware/
+│   │   └── authMiddleware.js
+│   │
+│   └── models/
+│       └── parkingModel.js
 │
-├── detection/                    # Multi-modal detection subsystems
+├── detection/
 │   ├── sample-data/
-│   │   └── parking-data.json     # Initial parking lot dataset
+│   │   └── parking-data.json
+│   │
 │   ├── simulator/
-│   │   └── simulator.js          # Continuous stochastic vehicle simulator
+│   │   └── simulator.js
+│   │
 │   ├── sensor/
-│   │   ├── README.md             # Hardware BOM & wiring schematic
-│   │   ├── virtual_sensor.js     # Virtual ESP32 ultrasonic cluster
+│   │   ├── README.md
+│   │   ├── virtual_sensor.js
 │   │   └── esp32-code/
-│   │       └── esp32_parking_sensor.ino # Arduino C++ firmware
+│   │       └── esp32_parking_sensor.ino
+│   │
 │   └── cctv/
-│       ├── detect.py             # OpenCV vehicle detection script
-│       ├── slot_config.json      # Coordinate bounding boxes
-│       ├── requirements.txt      # Python dependencies
-│       ├── README.md             # Computer vision guide
-│       └── sample-video/
-│           └── generate_synthetic_video.py # Generates test footage
+│       ├── detect.py
+│       ├── slot_config.json
+│       ├── requirements.txt
+│       ├── sample-video/
+│       │   ├── generate_synthetic_video.py
+│       │   └── sample_parking.mp4
+│       └── README.md
 │
-├── aws/                          # AWS Cloud deployment documentation
-│   ├── architecture.md           # Cloud architecture specifications
-│   ├── dynamodb-schema.md        # Tables, partition keys & GSIs
-│   ├── ec2-deployment.md         # Production Ubuntu EC2 + Nginx guide
-│   └── iot-core-setup.md         # AWS IoT Core X.509 & topic rules
+├── aws/
+│   ├── architecture.md
+│   ├── dynamodb-schema.md
+│   ├── ec2-deployment.md
+│   └── iot-core-setup.md
 │
-├── docs/                         # Academic documentation
-│   ├── project-overview.md       # High-level overview
-│   └── project-report.md         # Complete mini-project report
+├── docs/
+│   ├── project-overview.md
+│   ├── screenshots/
+│   └── project-report.md
 │
 ├── .gitignore
 └── README.md
 ```
+
+### 🔒 Environment Configuration & Security
+
+- **`.env.example`** is committed in the GitHub repository as a configuration template.
+- **`.env`** is **strictly ignored** by `.gitignore` to prevent committing secrets or credentials.
+- To configure your local environment, copy the template:
+  ```bash
+  cd backend
+  cp .env.example .env     # On Linux/macOS
+  copy .env.example .env   # On Windows
+  ```
+
 
 ---
 
