@@ -2,6 +2,10 @@
 
 SmartPark is a parking occupancy and reservation app. Drivers can view bay availability, create and manage reservations, and facility staff can manage bays and inspect detection activity. Occupancy can be supplied by a simulator, an IoT sensor, or an optional camera detector.
 
+**Live app:** [https://smartpark.dpdns.org](https://smartpark.dpdns.org) · **Source:** [github.com/Pranavr06/cloud-smart-parking-system](https://github.com/Pranavr06/cloud-smart-parking-system)
+
+The site opens on the sign-in page. Drivers can create an account there; facility staff sign in using the staff option and must be added to the server's administrator allowlist.
+
 The repository supports two deployment paths. The live preview currently runs as Docker containers on an existing EC2 host with local persistent storage. An ECS Fargate, Cognito, and DynamoDB stack is also included for accounts where those AWS resources are available.
 
 ## What it does
@@ -122,11 +126,13 @@ docker-compose.ec2.yml    Existing-host deployment stack
 
 ## Deployment and current hostname
 
+- Live app: [https://smartpark.dpdns.org](https://smartpark.dpdns.org). The site root redirects to `/login.html`.
+- Live deployment: Docker Compose on the existing EC2 host, with local persistent storage and Caddy-managed HTTPS. The DigitalPlat DNS A record points the hostname to the host's public address.
 - Existing EC2 Compose deployment: [`aws/ec2-deployment.md`](aws/ec2-deployment.md)
 - ECS Fargate deployment: [`aws/fargate-deployment.md`](aws/fargate-deployment.md)
 - DynamoDB table design: [`aws/dynamodb-schema.md`](aws/dynamodb-schema.md)
 
-The current preview hostname is IP-mapped DNS. Replace it with a domain you control for a clean branded URL; the domain's DNS must point to the host, and Caddy must be configured for that hostname before the old address can be removed. See the EC2 guide for the current host and TLS setup.
+The live hostname uses DigitalPlat's free `dpdns.org` namespace. As with other free domain services, its availability and continuity depend on the provider's policies. See the EC2 guide for the host, DNS, TLS, and operations details.
 
 ## Security notes
 
