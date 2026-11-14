@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f7fa">
+  <title>Sign in · SmartPark</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body class="auth-page">
+  <header class="navbar">
+    <a class="nav-brand" href="index.html" aria-label="SmartPark home"><span class="brand-icon">P</span><span class="brand-text"><h1>SmartPark <span class="brand-badge">Parking system</span></h1></span></a>
+    <div class="nav-actions"><a class="nav-link" href="dashboard.html">Browse availability</a></div>
+  </header>
+
+  <main class="auth-shell">
+    <section class="auth-story">
+      <div class="auth-kicker">Your parking, in one place</div>
+      <h2>Arrive with a space already in mind.</h2>
+      <p>Sign in to reserve a bay and keep your bookings together. Availability stays visible before you create an account.</p>
+      <div class="auth-story-note"><span class="auth-note-mark">P</span><span>Bookings are tied to your verified account.</span></div>
+    </section>
+
+    <section class="auth-card" aria-labelledby="auth-title">
+      <div class="auth-card-heading">
+        <span class="auth-eyebrow">SmartPark account</span>
+        <h1 id="auth-title">Welcome back</h1>
+        <p id="auth-description">Sign in to manage your parking reservations.</p>
+      </div>
+
+      <fieldset class="auth-role-picker">
+        <legend>Signing in as</legend>
+        <label class="auth-role-option"><input type="radio" name="account-role" value="driver" checked><span>Driver</span></label>
+        <label class="auth-role-option"><input type="radio" name="account-role" value="staff"><span>Facility staff</span></label>
+      </fieldset>
+
+      <div class="auth-tabs" role="tablist" aria-label="Account access">
+        <button class="auth-tab active" id="signin-tab" type="button" role="tab" aria-selected="true">Sign in</button>
+        <button class="auth-tab" id="signup-tab" type="button" role="tab" aria-selected="false">Create account</button>
+      </div>
+
+      <form id="auth-form" class="auth-form">
+        <div class="form-group">
+          <label class="form-label" for="email-input">Email address</label>
+          <input id="email-input" class="form-control" type="email" autocomplete="email" placeholder="you@example.com" required maxlength="254">
+        </div>
+        <div class="form-group" id="password-group">
+          <label class="form-label" for="password-input">Password</label>
+          <input id="password-input" class="form-control" type="password" autocomplete="current-password" minlength="10" required maxlength="128" placeholder="At least 10 characters">
+        </div>
+        <div class="form-group auth-hidden" id="code-group">
+          <label class="form-label" for="code-input">Email confirmation code</label>
+          <input id="code-input" class="form-control" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Enter the code from your email">
+        </div>
+        <p id="auth-message" class="auth-message" role="status" aria-live="polite"></p>
+        <button id="auth-submit" class="btn btn-primary auth-submit" type="submit">Sign in</button>
+      </form>
+
+      <p class="auth-footnote">By continuing, you agree to use your account for your own parking reservations.</p>
+    </section>
+  </main>
+  <footer class="footer">SmartPark · Secure account access</footer>
+  <script src="js/api.js"></script>
+  <script src="js/login.js"></script>
+</body>
+</html>

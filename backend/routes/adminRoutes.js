@@ -4,9 +4,9 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
-const { requireAdmin } = require('../middleware/authMiddleware');
+const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
 
-router.use(requireAdmin);
+router.use(requireAuth, requireAdmin);
 
 router.get('/dashboard', adminController.getDashboardStats);
 router.post('/slots', adminController.addSlot);

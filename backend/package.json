@@ -22,10 +22,15 @@
   "author": "Cloud Smart Parking System Team",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1169.0",
     "@aws-sdk/client-dynamodb": "^3.758.0",
     "@aws-sdk/lib-dynamodb": "^3.758.0",
-    "cors": "^2.8.5",
+    "aws-jwt-verify": "^5.2.1",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.7.4",
+    "jsonwebtoken": "^9.0.3"
   }
 }

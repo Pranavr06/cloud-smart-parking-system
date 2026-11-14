@@ -1,0 +1,61 @@
+services:
+  app:
+    image: smart-parking:ec2
+    container_name: smart-parking-app
+    restart: unless-stopped
+    env_file: ./.env.ec2
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      AWS_REGION: ap-southeast-2
+      DB_MODE: local
+      AUTH_MODE: local
+      DEPLOYMENT_MODE: single-instance
+      LOCAL_DATA_DIR: /app/backend/data
+    expose:
+      - "5000"
+    volumes:
+      - parking-data:/app/backend/data
+    networks:
+      - parking-internal
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    init: true
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    container_name: smart-parking-caddy
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - parking-internal
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    init: true
+
+networks:
+  parking-internal:
+    name: smart-parking-internal
+
+volumes:
+  parking-data:
+    name: smart-parking-data
+  caddy-data:
+    name: smart-parking-caddy-data
+  caddy-config:
+    name: smart-parking-caddy-config

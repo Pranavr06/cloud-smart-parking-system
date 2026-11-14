@@ -1,7 +1,7 @@
 # AWS IoT Core Setup & Integration Guide
 ## Cloud-Based Smart Parking Management System
 
-This document describes how to configure **AWS IoT Core** to securely receive telemetry from ESP32 edge microcontrollers equipped with ultrasonic or IR sensors, and forward parking occupancy states to Amazon DynamoDB.
+This document describes how to configure **AWS IoT Core** to receive telemetry from ESP32 sensors. Route state changes through the application's authenticated detection endpoint so reservation conflict handling and the detection audit trail are applied.
 
 ---
 
@@ -15,14 +15,16 @@ sequenceDiagram
     participant ESP32 as ESP32 Sensor Node
     participant IoTCore as AWS IoT Core (MQTT Broker)
     participant IoTRule as IoT Topic Rule Engine
-    participant DynamoDB as DynamoDB (ParkingSlots)
+    participant API as SmartPark REST API
+    participant DynamoDB as DynamoDB
     participant Dashboard as Web Dashboard
 
     ESP32->>IoTCore: TLS Handshake (X.509 Client Cert)
     Note over ESP32: Ultrasonic Distance < 50cm detected
     ESP32->>IoTCore: MQTT PUBLISH to "parking/sensor/status"<br/>{ "slotId": "A01", "status": "OCCUPIED" }
     IoTCore->>IoTRule: Topic Match & SQL Filter
-    IoTRule->>DynamoDB: UpdateItem (slotId='A01', status='OCCUPIED')
+    IoTRule->>API: HTTPS POST /api/detection/update (detection key)
+    API->>DynamoDB: Apply guarded state change and audit event
     DynamoDB-->>Dashboard: Streamed / Polled to live dashboard
 ```
 
@@ -95,7 +97,7 @@ sequenceDiagram
 
 ### 5. Step 4: Configure AWS IoT Core Routing Rule
 
-Create an IoT Rule to forward incoming MQTT payloads directly to Amazon DynamoDB or backend webhook.
+Create an IoT Rule to forward incoming MQTT payloads to the SmartPark HTTPS API. Do not write directly to `ParkingSlots`: direct table writes bypass reservation conflict handling and do not create detection audit records.
 
 1. In the AWS IoT Console, navigate to **Message routing** > **Rules** > **Create rule**.
 2. **Rule Name:** `ParkingSensorIngestionRule`
@@ -110,12 +112,10 @@ Create an IoT Rule to forward incoming MQTT payloads directly to Amazon DynamoDB
      parse_time("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timestamp()) AS lastUpdated
    FROM 'parking/sensor/status'
    ```
-4. **Action:** Choose **DynamoDB (update table)** or **HTTP Destination / Lambda**:
-   - **Table name:** `ParkingSlots`
-   - **Hash key:** `slotId`
-   - **Hash key value:** `${slotId}`
-   - **Update expression:** `SET #s = :status, #src = :source, #lu = :lastUpdated, #conf = :confidence`
-   - **IAM Role:** Create `IoTRuleToDynamoDBRole` with `dynamodb:UpdateItem` permissions.
+4. **Action:** Choose **HTTP** and set the endpoint to `https://<YOUR_DOMAIN>/api/detection/update`.
+   - Add a request header named `x-detection-key` with the same secret as the server's `DETECTION_API_KEY`. Restrict access to editing this IoT rule because its header contains the ingestion credential.
+   - Use a SELECT statement that forwards `slotId`, `status`, `confidence`, `parkingArea`, `source`, and a detection timestamp in the JSON body. Ensure `source` is the literal `IOT`.
+   - Configure an error action or failure alert so rejected requests are visible.
 5. Choose **Save**.
 
 ---
@@ -139,4 +139,4 @@ Before flashing hardware:
      }
      ```
    - Click **Publish**.
-4. Observe the message arrive on the subscribed topic and automatically update the `ParkingSlots` DynamoDB table and web dashboard.
+4. Observe the message arrive on the subscribed topic, then verify the API accepted the reading and the dashboard reflects it. The rule's HTTP action requires the `x-detection-key` header from the production environment.

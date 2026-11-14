@@ -7,9 +7,6 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/responsive.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <!-- Top Navigation -->
@@ -25,7 +22,7 @@
       <li><a href="index.html" class="nav-link">Home</a></li>
       <li><a href="dashboard.html" class="nav-link active">Live Dashboard</a></li>
       <li><a href="booking.html" class="nav-link">Book a Slot</a></li>
-      <li><a href="admin.html" class="nav-link">Admin Console</a></li>
+      <li hidden data-admin-only><a href="admin.html" class="nav-link">Staff console</a></li>
     </ul>
 
     <div class="nav-actions">
@@ -199,6 +196,7 @@
   </footer>
 
   <script src="js/api.js"></script>
+  <script src="js/auth-ui.js"></script>
   <script src="js/dashboard.js"></script>
 </body>
 </html>

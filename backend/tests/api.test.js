@@ -1,137 +1,81 @@
-/**
- * Backend API Verification Test
- * Tests health endpoint, parking routes, detection routes, booking flow, and admin access.
- */
+/** API smoke checks for auth, booking ownership, admin roles, and detection keys. */
 const http = require('http');
+const testEmail = `admin-${Date.now()}@example.test`;
+process.env.AUTH_MODE = 'local';
+process.env.NODE_ENV = 'test';
+process.env.LOCAL_ADMIN_EMAILS = testEmail;
+process.env.LOCAL_SESSION_SECRET = 'test-session-secret-that-is-long-enough-0123456789';
+process.env.DETECTION_API_KEY = 'test-detection-key-for-local-suite-only-00000000';
 const app = require('../server');
 
 let server;
 const PORT = 5099;
-
 function request(options, data = null) {
   return new Promise((resolve, reject) => {
     const req = http.request({ ...options, port: PORT, host: '127.0.0.1' }, res => {
       let body = '';
-      res.on('data', chunk => body += chunk);
+      res.on('data', chunk => { body += chunk; });
       res.on('end', () => {
-        try {
-          const json = body ? JSON.parse(body) : null;
-          resolve({ status: res.statusCode, headers: res.headers, body: json, rawBody: body });
-        } catch {
-          resolve({ status: res.statusCode, headers: res.headers, body, rawBody: body });
-        }
+        try { resolve({ status: res.statusCode, headers: res.headers, body: body ? JSON.parse(body) : null }); }
+        catch { resolve({ status: res.statusCode, headers: res.headers, body }); }
       });
     });
     req.on('error', reject);
-    if (data) {
-      req.write(typeof data === 'string' ? data : JSON.stringify(data));
-    }
+    if (data) req.write(typeof data === 'string' ? data : JSON.stringify(data));
     req.end();
   });
 }
 
 async function runTests() {
-  console.log('🧪 Starting API Verification Tests...');
   let passed = 0;
   let failed = 0;
-
-  function assert(condition, message) {
-    if (condition) {
-      console.log(`  ✅ PASS: ${message}`);
-      passed++;
-    } else {
-      console.error(`  ❌ FAIL: ${message}`);
-      failed++;
-    }
-  }
-
+  const assert = (condition, message) => {
+    if (condition) { console.log(`PASS ${message}`); passed++; }
+    else { console.error(`FAIL ${message}`); failed++; }
+  };
   server = app.listen(PORT);
-
   try {
-    // 1. Health Endpoint Test
-    const healthRes = await request({ path: '/api/health', method: 'GET' });
-    assert(healthRes.status === 200, 'GET /api/health returns 200');
-    assert(healthRes.body && healthRes.body.status === 'HEALTHY', 'Status is HEALTHY');
-    assert(healthRes.body && healthRes.body.databaseMode === 'local', 'Database mode is local for development');
+    const health = await request({ path: '/api/health', method: 'GET' });
+    assert(health.status === 200 && health.body.databaseStatus === 'HEALTHY', 'health endpoint reports database healthy');
+    const slots = await request({ path: '/api/parking/slots', method: 'GET' });
+    assert(slots.status === 200 && slots.body.data.length > 0, 'parking slots are available');
+    const anonymousBookings = await request({ path: '/api/bookings', method: 'GET' });
+    assert(anonymousBookings.status === 401, 'booking API requires a session');
 
-    // 2. Parking Slots Retrieval Test
-    const slotsRes = await request({ path: '/api/parking/slots', method: 'GET' });
-    assert(slotsRes.status === 200, 'GET /api/parking/slots returns 200');
-    assert(Array.isArray(slotsRes.body.data) && slotsRes.body.data.length > 0, 'Initial seeded slots exist');
+    const signUp = await request({ path: '/api/auth/signup', method: 'POST', headers: { 'Content-Type': 'application/json' } }, { email: testEmail, password: 'Safe-test-password-123' });
+    assert(signUp.status === 201, 'user signup succeeds');
+    const login = await request({ path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } }, { email: testEmail, password: 'Safe-test-password-123' });
+    const cookie = (login.headers['set-cookie'] || [])[0]?.split(';')[0];
+    assert(login.status === 200 && Boolean(cookie), 'login returns an HTTP-only session cookie');
+    const me = await request({ path: '/api/auth/me', method: 'GET', headers: { Cookie: cookie } });
+    assert(me.status === 200 && me.body.data.email === testEmail, 'session endpoint returns authenticated account');
 
-    // 3. Availability Summary Test
-    const availRes = await request({ path: '/api/parking/availability', method: 'GET' });
-    assert(availRes.status === 200, 'GET /api/parking/availability returns 200');
-    assert(availRes.body.data.totalCapacity > 0, 'Availability totalCapacity > 0');
-    assert(typeof availRes.body.data.availableSlots === 'number', 'availableSlots is a number');
+    const free = (await request({ path: '/api/parking/availability', method: 'GET' })).body.data.slots.find(slot => slot.status === 'FREE');
+    if (free) {
+      const booking = await request({ path: '/api/bookings', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie } }, { slotId: free.slotId, userId: 'forged-user-id', vehicleNumber: 'TEST-123' });
+      assert(booking.status === 201 && booking.body.data.userId === me.body.data.sub, 'booking owner comes from authenticated identity');
+      const mine = await request({ path: '/api/bookings', method: 'GET', headers: { Cookie: cookie } });
+      assert(mine.status === 200 && mine.body.data.some(item => item.bookingId === booking.body.data.bookingId), 'driver can list their own bookings');
+      const cancel = await request({ path: `/api/bookings/${booking.body.data.bookingId}/cancel`, method: 'PUT', headers: { Cookie: cookie } });
+      assert(cancel.status === 200, 'driver can cancel their own booking');
+    } else assert(false, 'a free slot is available for booking check');
 
-    // 4. Booking Creation Test
-    const freeSlot = availRes.body.data.slots.find(s => s.status === 'FREE');
-    if (freeSlot) {
-      const bookRes = await request(
-        {
-          path: '/api/bookings',
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        },
-        { slotId: freeSlot.slotId, userId: 'test-driver-1', vehicleNumber: 'KA-01-AB-1234' }
-      );
-      assert(bookRes.status === 201, `POST /api/bookings reserved slot ${freeSlot.slotId}`);
-      assert(bookRes.body.data && bookRes.body.data.status === 'ACTIVE', 'Booking status is ACTIVE');
-
-      // Attempt double-booking same slot (should fail)
-      const doubleBookRes = await request(
-        {
-          path: '/api/bookings',
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        },
-        { slotId: freeSlot.slotId, userId: 'test-driver-2' }
-      );
-      assert(doubleBookRes.status === 400, 'Prevent duplicate booking of already reserved slot');
-
-      // Cancel booking
-      const cancelRes = await request(
-        {
-          path: `/api/bookings/${bookRes.body.data.bookingId}/cancel`,
-          method: 'PUT'
-        }
-      );
-      assert(cancelRes.status === 200, 'PUT /api/bookings/:id/cancel releases slot');
-    }
-
-    // 5. Admin Security Test
-    const adminNoKey = await request({ path: '/api/admin/dashboard', method: 'GET' });
-    assert(adminNoKey.status === 401, 'GET /api/admin/dashboard without key rejects with 401');
-
-    const adminWithKey = await request({
-      path: '/api/admin/dashboard',
-      method: 'GET',
-      headers: { 'x-admin-key': 'admin-secret-key-smart-parking-2026' }
-    });
-    assert(adminWithKey.status === 200, 'GET /api/admin/dashboard with key returns 200');
-
-    // 6. Detection Update Test
-    const detectRes = await request(
-      {
-        path: '/api/detection/update',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      },
-      { slotId: 'A03', status: 'OCCUPIED', source: 'JSON', confidence: 0.98 }
-    );
-    assert(detectRes.status === 200, 'POST /api/detection/update updates slot status');
-
-    console.log(`\n🏁 Test Results: ${passed} passed, ${failed} failed`);
-  } catch (err) {
-    console.error('Test execution error:', err);
+    const admin = await request({ path: '/api/admin/dashboard', method: 'GET', headers: { Cookie: cookie } });
+    assert(admin.status === 200, 'admin route accepts a signed-in administrator');
+    const noAdmin = await request({ path: '/api/admin/dashboard', method: 'GET' });
+    assert(noAdmin.status === 401, 'admin route rejects anonymous requests');
+    const noDetectionKey = await request({ path: '/api/detection/update', method: 'POST', headers: { 'Content-Type': 'application/json' } }, { slotId: 'A03', status: 'OCCUPIED', source: 'JSON', confidence: 0.98 });
+    assert(noDetectionKey.status === 401, 'detection endpoint rejects missing key');
+    const detection = await request({ path: '/api/detection/update', method: 'POST', headers: { 'Content-Type': 'application/json', 'x-detection-key': process.env.DETECTION_API_KEY } }, { slotId: 'A03', status: 'OCCUPIED', source: 'JSON', confidence: 0.98 });
+    assert(detection.status === 200, 'detection endpoint accepts configured key');
+  } catch (error) {
+    console.error('Test execution error:', error);
     failed++;
   } finally {
     server.close();
-    process.exit(failed > 0 ? 1 : 0);
+    console.log(`\n${passed} passed, ${failed} failed`);
+    process.exitCode = failed ? 1 : 0;
   }
 }
 
-if (require.main === module) {
-  runTests();
-}
+if (require.main === module) runTests();

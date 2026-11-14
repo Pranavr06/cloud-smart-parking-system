@@ -5,9 +5,12 @@
  */
 
 const http = require('http');
+const https = require('https');
 
 const API_HOST = process.env.API_HOST || '127.0.0.1';
 const API_PORT = process.env.API_PORT || 5000;
+const API_URL = process.env.PARKING_API_URL || `http://${API_HOST}:${API_PORT}/api/detection/update`;
+const DETECTION_API_KEY = process.env.DETECTION_API_KEY;
 const INTERVAL_MS = parseInt(process.env.IOT_INTERVAL_MS || '3500', 10);
 
 // Simulated IoT Nodes
@@ -19,14 +22,14 @@ const SENSOR_NODES = [
 function sendIoTUpdate(reading) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(reading);
-    const req = http.request({
-      hostname: API_HOST,
-      port: API_PORT,
-      path: '/api/detection/update',
+    const endpoint = new URL(API_URL);
+    const client = endpoint.protocol === 'https:' ? https : http;
+    const req = client.request(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(data)
+        'Content-Length': Buffer.byteLength(data),
+        ...(DETECTION_API_KEY ? { 'x-detection-key': DETECTION_API_KEY } : {})
       }
     }, res => {
       let body = '';
@@ -89,7 +92,7 @@ async function start() {
   console.log('==================================================');
   console.log('📡 Virtual ESP32 Ultrasonic Sensor Cluster Active');
   console.log(`🏢 Nodes: ${SENSOR_NODES.map(n => n.slotId).join(', ')}`);
-  console.log(`⏱️ Interval: ${INTERVAL_MS}ms | Endpoint: http://${API_HOST}:${API_PORT}/api/detection/update`);
+  console.log(`⏱️ Interval: ${INTERVAL_MS}ms | Endpoint: ${API_URL}`);
   console.log('==================================================');
 
   const args = process.argv.slice(2);

@@ -5,7 +5,8 @@
 const {
   CreateTableCommand,
   DescribeTableCommand,
-  ListTablesCommand
+  ListTablesCommand,
+  waitUntilTableExists
 } = require('@aws-sdk/client-dynamodb');
 const { dynamoClient } = require('../config/aws');
 require('dotenv').config();
@@ -63,33 +64,55 @@ const TABLES = [
 
 async function setupTables() {
   console.log('--- Initializing DynamoDB Tables Setup ---');
+  if (!['aws', 'dynamodb-local'].includes(process.env.DB_MODE)) {
+    throw new Error('Set DB_MODE=aws or DB_MODE=dynamodb-local before provisioning tables. Local JSON mode has no DynamoDB tables.');
+  }
   if (!dynamoClient) {
-    console.log('[Setup] No active AWS DynamoDB client configured. If running locally with DB_MODE=local, file-based persistence is active.');
-    return;
+    throw new Error('No DynamoDB client configured. Set DB_MODE=aws or DB_MODE=dynamodb-local before provisioning tables.');
   }
 
-  try {
-    const listResult = await dynamoClient.send(new ListTablesCommand({}));
-    const existingTables = listResult.TableNames || [];
-    console.log('[Setup] Existing tables:', existingTables);
+  let lastEvaluatedTableName;
+  const existingTables = new Set();
+  do {
+    const listResult = await dynamoClient.send(new ListTablesCommand({ ExclusiveStartTableName: lastEvaluatedTableName }));
+    (listResult.TableNames || []).forEach(name => existingTables.add(name));
+    lastEvaluatedTableName = listResult.LastEvaluatedTableName;
+  } while (lastEvaluatedTableName);
+  console.log('[Setup] Existing tables:', [...existingTables]);
 
-    for (const tableConfig of TABLES) {
-      if (existingTables.includes(tableConfig.TableName)) {
-        console.log(`[Setup] Table already exists: ${tableConfig.TableName}`);
-      } else {
-        console.log(`[Setup] Creating table: ${tableConfig.TableName}...`);
-        await dynamoClient.send(new CreateTableCommand(tableConfig));
-        console.log(`[Setup] Created table: ${tableConfig.TableName} successfully.`);
-      }
+  for (const tableConfig of TABLES) {
+    if (existingTables.has(tableConfig.TableName)) {
+      console.log(`[Setup] Table already exists: ${tableConfig.TableName}`);
+    } else {
+      console.log(`[Setup] Creating table: ${tableConfig.TableName}...`);
+      await dynamoClient.send(new CreateTableCommand(tableConfig));
+      console.log(`[Setup] Create request accepted: ${tableConfig.TableName}`);
     }
-    console.log('[Setup] All DynamoDB tables ready.');
-  } catch (err) {
-    console.error('[Setup] Error creating DynamoDB tables:', err.message);
+    await waitUntilTableExists({ client: dynamoClient, maxWaitTime: 180 }, { TableName: tableConfig.TableName });
+    const { Table } = await dynamoClient.send(new DescribeTableCommand({ TableName: tableConfig.TableName }));
+    const actualKeys = (Table.KeySchema || []).map(key => `${key.AttributeName}:${key.KeyType}`).sort();
+    const expectedKeys = tableConfig.KeySchema.map(key => `${key.AttributeName}:${key.KeyType}`).sort();
+    if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
+      throw new Error(`Table ${tableConfig.TableName} has key schema [${actualKeys.join(', ')}]; expected [${expectedKeys.join(', ')}].`);
+    }
+    const actualIndexes = new Set((Table.GlobalSecondaryIndexes || []).map(index => index.IndexName));
+    const missingIndexes = (tableConfig.GlobalSecondaryIndexes || [])
+      .map(index => index.IndexName)
+      .filter(indexName => !actualIndexes.has(indexName));
+    if (missingIndexes.length) {
+      throw new Error(`Table ${tableConfig.TableName} is missing required indexes: ${missingIndexes.join(', ')}.`);
+    }
+    console.log(`[Setup] Table is active: ${tableConfig.TableName}`);
   }
+
+  console.log('[Setup] All DynamoDB tables ready.');
 }
 
 if (require.main === module) {
-  setupTables();
+  setupTables().catch(err => {
+    console.error('[Setup] Error creating DynamoDB tables:', err);
+    process.exitCode = 1;
+  });
 }
 
 module.exports = { setupTables, TABLES };

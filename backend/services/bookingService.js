@@ -19,6 +19,14 @@ async function createBooking({ slotId, userId, vehicleNumber, durationMinutes = 
   if (!slotId) throw new Error('Slot ID is required');
   if (!userId) throw new Error('User ID is required');
 
+  const normalizedVehicleNumber = String(vehicleNumber || '').trim().toUpperCase();
+  const compactVehicleNumber = normalizedVehicleNumber.replace(/[\s-]/g, '');
+  const isIndianRegistration = /^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$/.test(compactVehicleNumber);
+  const isBharatRegistration = /^\d{2}BH\d{4}[A-Z]{1,2}$/.test(compactVehicleNumber);
+  if (normalizedVehicleNumber.length > 16 || (!isIndianRegistration && !isBharatRegistration)) {
+    throw new Error('Enter a valid Indian vehicle registration (for example, KA-01-MJ-4050).');
+  }
+
   const cleanSlotId = slotId.trim().toUpperCase();
 
   // 1. Fetch current slot status
@@ -55,7 +63,7 @@ async function createBooking({ slotId, userId, vehicleNumber, durationMinutes = 
     bookingId,
     userId: String(userId).trim(),
     slotId: cleanSlotId,
-    vehicleNumber: (vehicleNumber || 'NOT-SPECIFIED').toUpperCase().trim(),
+    vehicleNumber: normalizedVehicleNumber,
     bookingTime: now,
     status: 'ACTIVE',
     durationMinutes: Number(durationMinutes) || 60,
@@ -218,9 +226,21 @@ async function cancelBooking(bookingId) {
   };
 }
 
+async function deleteBooking(bookingId) {
+  const booking = await getBookingById(bookingId);
+  if (!booking) throw new Error(`Booking ${bookingId} not found`);
+  if (booking.status === 'ACTIVE') await cancelBooking(bookingId);
+  await db.deleteItem({
+    TableName: TABLE_BOOKINGS,
+    Key: { bookingId: booking.bookingId }
+  });
+  return { bookingId: booking.bookingId, slotId: booking.slotId, deleted: true };
+}
+
 module.exports = {
   createBooking,
   getAllBookings,
   getBookingById,
-  cancelBooking
+  cancelBooking,
+  deleteBooking
 };

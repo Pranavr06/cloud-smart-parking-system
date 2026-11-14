@@ -1,19 +1,12 @@
 /**
  * Admin Console Controller
- * Manages slot configuration, status overrides, and Chart.js analytics.
+ * Manages facility settings and locally rendered occupancy summaries.
  */
 
-let occupancyChartInstance = null;
-let sourceChartInstance = null;
 
-function configureAdminKey() {
-  const currentKey = ParkingAPI.getAdminKey();
-  const newKey = prompt('Enter Admin API Key:', currentKey);
-  if (newKey && newKey.trim()) {
-    ParkingAPI.setAdminKey(newKey.trim());
-    ParkingAPI.showToast('Admin API key updated', 'success');
-    loadAdminDashboard();
-  }
+async function signOutAdmin() {
+  await ParkingAPI.signOut();
+  window.location.assign('index.html');
 }
 
 async function loadAdminDashboard() {
@@ -41,112 +34,44 @@ async function loadAdminDashboard() {
     renderHistoryTable(data.recentHistory);
   } catch (err) {
     console.error('Admin loading error:', err);
-    ParkingAPI.showToast(`Admin error: ${err.message}`, 'error');
-    if (err.message.includes('401') || err.message.includes('Unauthorized')) {
-      document.getElementById('admin-auth-status').textContent = 'Key Unauthorized';
-      document.getElementById('admin-auth-status').parentElement.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+    if (err.status === 401 || err.status === 403) {
+      window.location.replace('/admin-login.html?denied=1');
+      return;
     }
+    ParkingAPI.showToast(`Admin error: ${err.message}`, 'error');
   }
 }
 
 function renderOccupancyChart(summary) {
-  const ctx = document.getElementById('occupancyChart');
-  if (!ctx) return;
-
-  if (occupancyChartInstance) {
-    occupancyChartInstance.destroy();
-  }
-
-  occupancyChartInstance = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Free', 'Occupied', 'Reserved', 'Unknown'],
-      datasets: [{
-        data: [
-          summary.availableSlots,
-          summary.occupiedSlots,
-          summary.reservedSlots,
-          summary.unknownSlots
-        ],
-        backgroundColor: [
-          '#10b981', // Free - Green
-          '#ef4444', // Occupied - Red
-          '#f59e0b', // Reserved - Yellow
-          '#6b7280'  // Unknown - Grey
-        ],
-        borderWidth: 2,
-        borderColor: '#0f172a'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'right',
-          labels: { color: '#94a3b8', font: { family: 'Inter', size: 12 } }
-        }
-      },
-      cutout: '65%'
-    }
-  });
+  const target = document.getElementById('occupancyChart');
+  if (!target) return;
+  const rows = [
+    ['Available', Number(summary.availableSlots) || 0, 'free'],
+    ['Occupied', Number(summary.occupiedSlots) || 0, 'occupied'],
+    ['Reserved', Number(summary.reservedSlots) || 0, 'reserved'],
+    ['Unverified', Number(summary.unknownSlots) || 0, 'unknown']
+  ];
+  const total = rows.reduce((sum, row) => sum + row[1], 0);
+  target.innerHTML = rows.map(([label, value, tone]) => {
+    const width = total ? Math.round(value / total * 100) : 0;
+    return `<div class="admin-chart-row"><div class="admin-chart-label"><span>${label}</span><strong>${value}</strong></div><div class="admin-chart-track"><span class="${tone}" style="width:${width}%"></span></div></div>`;
+  }).join('') + `<p class="admin-chart-footnote">${total} registered ${total === 1 ? 'bay' : 'bays'}</p>`;
 }
 
 function renderSourceChart(stats = {}) {
-  const ctx = document.getElementById('sourceChart');
-  if (!ctx) return;
-
-  if (sourceChartInstance) {
-    sourceChartInstance.destroy();
-  }
-
-  sourceChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: ['JSON Simulator', 'IoT ESP32', 'CCTV OpenCV', 'Admin Override'],
-      datasets: [{
-        label: 'Active Bay Sources',
-        data: [
-          stats.JSON || 0,
-          stats.IOT || 0,
-          stats.CCTV || 0,
-          stats.ADMIN || 0
-        ],
-        backgroundColor: [
-          'rgba(56, 189, 248, 0.75)',
-          'rgba(16, 185, 129, 0.75)',
-          'rgba(168, 85, 247, 0.75)',
-          'rgba(245, 158, 11, 0.75)'
-        ],
-        borderColor: [
-          '#38bdf8',
-          '#10b981',
-          '#a855f7',
-          '#f59e0b'
-        ],
-        borderWidth: 1,
-        borderRadius: 6
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          ticks: { color: '#94a3b8', font: { family: 'Inter', size: 11 } },
-          grid: { display: false }
-        },
-        y: {
-          ticks: { color: '#94a3b8', precision: 0 },
-          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-          beginAtZero: true
-        }
-      },
-      plugins: {
-        legend: { display: false }
-      }
-    }
-  });
+  const target = document.getElementById('sourceChart');
+  if (!target) return;
+  const rows = [
+    ['Simulator', Number(stats.JSON) || 0, 'simulator'],
+    ['IoT sensors', Number(stats.IOT) || 0, 'iot'],
+    ['Camera detection', Number(stats.CCTV) || 0, 'camera'],
+    ['Staff override', Number(stats.ADMIN) || 0, 'staff']
+  ];
+  const max = Math.max(1, ...rows.map((row) => row[1]));
+  target.innerHTML = rows.map(([label, value, tone]) => {
+    const width = Math.round(value / max * 100);
+    return `<div class="admin-chart-row"><div class="admin-chart-label"><span>${label}</span><strong>${value}</strong></div><div class="admin-chart-track"><span class="${tone}" style="width:${width}%"></span></div></div>`;
+  }).join('') + '<p class="admin-chart-footnote">Current bay count by last detection source</p>';
 }
 
 function renderSlotsTable(slots = []) {
@@ -314,7 +239,18 @@ async function handleDeleteSlot(slotId) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const session = await ParkingAPI.getSession();
+    if (!(session.data.groups || []).includes('parking-admin')) {
+      window.location.replace('/admin-login.html?denied=1');
+      return;
+    }
+    document.getElementById('admin-auth-status').textContent = session.data.email || 'Staff access';
+  } catch {
+    window.location.replace('/admin-login.html');
+    return;
+  }
   loadAdminDashboard();
 
   const addForm = document.getElementById('add-slot-form');

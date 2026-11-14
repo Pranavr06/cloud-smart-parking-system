@@ -1,41 +1,45 @@
-/**
- * Authentication & Authorization Middleware
- * Protects administrative routes and extracts user context.
- */
 require('dotenv').config();
+const crypto = require('crypto');
+const authService = require('../services/authService');
 
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'admin-secret-key-smart-parking-2026';
+function secureKeyMatches(provided, expected) {
+  if (typeof provided !== 'string' || typeof expected !== 'string') return false;
+  const providedBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  return providedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
+const DETECTION_API_KEY = process.env.DETECTION_API_KEY;
+if (process.env.NODE_ENV === 'production' && (!DETECTION_API_KEY || DETECTION_API_KEY.length < 32)) {
+  throw new Error('Production requires a DETECTION_API_KEY of at least 32 characters.');
+}
+
+async function requireAuth(req, res, next) {
+  try {
+    const user = await authService.verifySession(req.cookies && req.cookies.smartpark_session);
+    if (!user) return res.status(401).json({ success: false, error: 'Sign in to continue.' });
+    req.user = user;
+    next();
+  } catch {
+    res.clearCookie('smartpark_session', { path: '/' });
+    return res.status(401).json({ success: false, error: 'Your session has expired. Sign in again.' });
+  }
+}
 
 function requireAdmin(req, res, next) {
-  const headerKey = req.headers['x-admin-key'];
-  const authHeader = req.headers['authorization'];
-  let bearerToken = null;
-
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    bearerToken = authHeader.substring(7).trim();
+  if (!req.user) return res.status(401).json({ success: false, error: 'Sign in to continue.' });
+  if (!(req.user.groups || []).includes('parking-admin')) {
+    return res.status(403).json({ success: false, error: 'Administrator access is required.' });
   }
-
-  const token = headerKey || bearerToken;
-
-  if (!token || token !== ADMIN_API_KEY) {
-    return res.status(401).json({
-      success: false,
-      error: 'Unauthorized: Valid Admin API key required',
-      hint: 'Include x-admin-key header or Authorization: Bearer <ADMIN_API_KEY>'
-    });
-  }
-
-  req.isAdmin = true;
   next();
 }
 
-function extractUser(req, res, next) {
-  const userId = req.headers['x-user-id'] || req.body.userId || req.query.userId || 'guest-user';
-  req.userId = String(userId).trim();
+function requireDetectionKey(req, res, next) {
+  if (process.env.NODE_ENV !== 'production' && !DETECTION_API_KEY) return next();
+  if (!secureKeyMatches(req.headers['x-detection-key'], DETECTION_API_KEY)) {
+    return res.status(401).json({ success: false, error: 'Valid detection API key required.' });
+  }
   next();
 }
 
-module.exports = {
-  requireAdmin,
-  extractUser
-};
+module.exports = { requireAuth, requireAdmin, requireDetectionKey };

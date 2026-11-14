@@ -1,205 +1,40 @@
-# AWS EC2 Production Deployment Guide
-## Cloud-Based Smart Parking Management System
+# Existing EC2 Docker deployment
 
-This guide outlines the step-by-step procedure to deploy the Smart Parking backend and web interface to an Amazon EC2 instance.
+This deployment reuses the existing Sentinel EC2 host and adds a separate parking app container plus a Caddy HTTPS proxy. It does not create another EC2 instance. The current preview is `https://smartpark.54.79.97.73.nip.io`; the bare IP redirects there. This IP-mapped hostname is temporary. For a branded hostname, point a domain you control at the EC2 public IP, update the hostname and redirect in `Caddyfile`, then recreate Caddy so it can obtain a certificate for the new name.
 
----
+## Runtime
 
-### Step 1: Launch EC2 Instance & Configure Security Groups
+- `smart-parking-app`: Node.js API and static frontend, non-root container, port 5000 on the private Docker network only.
+- `smart-parking-caddy`: reverse proxy on ports 80/443. HTTP redirects to HTTPS. Caddy stores the IP and hostname certificates in a persistent volume and renews them automatically.
+- `smart-parking-data`: persistent Docker volume for local parking data and bcrypt password hashes. Data is stored on the EC2 host, not DynamoDB.
+- `smart-parking-caddy-data`: persistent Caddy certificate state.
 
-1. Log in to the [AWS Management Console](https://console.aws.amazon.com/ec2).
-2. Choose **Launch Instances**:
-   - **Name:** `SmartParking-Backend-Server`
-   - **AMI:** Ubuntu Server 22.04 LTS (HVM), SSD Volume Type (64-bit x86)
-   - **Instance Type:** `t3.micro` (Eligible for AWS Free Tier) or `t3.small`
-   - **Key Pair:** Select or generate an RSA key pair (`smart-parking-key.pem`).
-3. **Configure Security Group (`SmartParking-SG`):**
-   - **Inbound Rules:**
-     | Type | Protocol | Port Range | Source | Description |
-     | :--- | :--- | :--- | :--- | :--- |
-     | SSH | TCP | 22 | My IP | Secure administrative terminal access |
-     | HTTP | TCP | 80 | 0.0.0.0/0 | Public web traffic & Let's Encrypt challenge |
-     | HTTPS | TCP | 443 | 0.0.0.0/0 | Secure web traffic |
-     | Custom TCP | TCP | 5000 | 0.0.0.0/0 (Optional) | Direct testing port (can be closed once Nginx is configured) |
+The public security group permits TCP 80 and 443 for the website. SSH remains restricted to the existing operator IP rule. The Sentinel app continues on port 3000.
 
----
+## Authentication and storage mode
 
-### Step 2: Create & Attach IAM Role for DynamoDB Access
+This host uses `AUTH_MODE=local` and `DB_MODE=local` because the AWS organization policy blocks DynamoDB and Fargate provisioning. Local passwords are bcrypt-hashed. Sessions use a random, host-only secret and an HTTP-only, Secure, SameSite cookie. Signup/login endpoints require HTTPS. The local database is persistent across container restarts but is single-host storage; run only one app replica and keep host backups.
 
-To satisfy the **Security Requirement** that no AWS Access Keys or Secret Keys are stored in the server `.env`, attach an IAM role directly to the EC2 instance:
+The admin page is gated by `LOCAL_ADMIN_EMAILS`. Set it to a comma-separated list of exact staff email addresses in `/home/ubuntu/smart-parking/.env.ec2` (for example, `LOCAL_ADMIN_EMAILS=manager@example.com,staff@example.com`), then recreate the app container. The login page's **Facility staff** choice only selects the sign-in flow; the server still checks this allowlist before serving the console. Add each staff address to the allowlist before they sign in.
 
-1. Navigate to **AWS IAM Console** > **Roles** > **Create Role**.
-2. Select **AWS Service** and choose **EC2**.
-3. Attach Policy or create inline policy `SmartParkingDynamoDBPolicy`:
-   ```json
-   {
-     "Version": "2012-10-17",
-     "Statement": [
-       {
-         "Effect": "Allow",
-         "Action": [
-           "dynamodb:GetItem",
-           "dynamodb:PutItem",
-           "dynamodb:UpdateItem",
-           "dynamodb:DeleteItem",
-           "dynamodb:Scan",
-           "dynamodb:Query",
-           "dynamodb:DescribeTable",
-           "dynamodb:BatchWriteItem",
-           "dynamodb:TransactWriteItems"
-         ],
-         "Resource": [
-           "arn:aws:dynamodb:*:*:table/ParkingSlots",
-           "arn:aws:dynamodb:*:*:table/ParkingSlots/*",
-           "arn:aws:dynamodb:*:*:table/Bookings",
-           "arn:aws:dynamodb:*:*:table/Bookings/*",
-           "arn:aws:dynamodb:*:*:table/DetectionHistory",
-           "arn:aws:dynamodb:*:*:table/DetectionHistory/*"
-         ]
-       }
-     ]
-   }
-   ```
-4. Name the role `SmartParkingEC2Role` and create it.
-5. In the EC2 Console, select your instance > **Actions** > **Security** > **Modify IAM Role** > Attach `SmartParkingEC2Role`.
+## Operations
 
----
+On the EC2 host:
 
-### Step 3: Connect to EC2 & Install Runtime Dependencies
-
-Connect to the instance via SSH:
 ```bash
-chmod 400 smart-parking-key.pem
-ssh -i "smart-parking-key.pem" ubuntu@<YOUR_EC2_PUBLIC_DNS_OR_IP>
+cd /home/ubuntu/smart-parking
+docker compose -p smart-parking -f docker-compose.ec2.yml ps
+docker compose -p smart-parking -f docker-compose.ec2.yml logs --tail 100 app caddy
+docker compose -p smart-parking -f docker-compose.ec2.yml restart app
 ```
 
-Update package repositories and install Node.js (v22 LTS), Git, Nginx, and build essentials:
+The seed data is sample facility data. To update it, run the seed script from inside the app container and restart the app to reload its in-memory cache:
+
 ```bash
-sudo apt update && sudo apt upgrade -y
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs git nginx build-essential
-
-# Verify versions
-node -v
-npm -v
+docker exec smart-parking-app node backend/scripts/seedData.js
+docker restart smart-parking-app
 ```
 
-Install PM2 globally for production process management:
-```bash
-sudo npm install -g pm2
-```
+## Migration to Fargate
 
----
-
-### Step 4: Clone Repository & Configure Environment
-
-Clone the repository into `/var/www`:
-```bash
-sudo mkdir -p /var/www
-sudo chown -R ubuntu:ubuntu /var/www
-cd /var/www
-git clone https://github.com/<YOUR_GITHUB_USERNAME>/cloud-smart-parking-system.git
-cd cloud-smart-parking-system/backend
-
-# Install production dependencies
-npm install --production
-```
-
-Create production `.env` file:
-```bash
-cat << 'EOF' > .env
-PORT=5000
-NODE_ENV=production
-DB_MODE=aws
-AWS_REGION=us-east-1
-
-# Tables
-DYNAMODB_TABLE_PARKING_SLOTS=ParkingSlots
-DYNAMODB_TABLE_BOOKINGS=Bookings
-DYNAMODB_TABLE_DETECTION_HISTORY=DetectionHistory
-
-# Admin Authentication
-ADMIN_API_KEY=super-secret-admin-key-ec2-2026
-JWT_SECRET=production-smart-parking-jwt-token
-EOF
-```
-
-Initialize DynamoDB tables:
-```bash
-node scripts/setupDynamoDB.js
-node scripts/seedData.js
-```
-
----
-
-### Step 5: Start Application with PM2
-
-Start the Node.js server with PM2:
-```bash
-pm2 start server.js --name "smart-parking"
-pm2 save
-pm2 startup
-# Follow on-screen instruction to register systemd service
-```
-
-Check process health:
-```bash
-pm2 status
-pm2 logs smart-parking
-```
-
----
-
-### Step 6: Configure Nginx Reverse Proxy
-
-Create an Nginx configuration file:
-```bash
-sudo nano /etc/nginx/sites-available/smartparking
-```
-
-Add the following block:
-```nginx
-server {
-    listen 80;
-    server_name <YOUR_DOMAIN_OR_EC2_PUBLIC_IP>;
-
-    location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-```
-
-Enable the configuration and reload Nginx:
-```bash
-sudo ln -s /etc/nginx/sites-available/smartparking /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
----
-
-### Step 7: Verification
-
-Visit `http://<YOUR_EC2_PUBLIC_IP>` in your browser to access the web dashboard!
-Verify health endpoint:
-```bash
-curl http://<YOUR_EC2_PUBLIC_IP>/api/health
-```
-Output:
-```json
-{
-  "status": "HEALTHY",
-  "service": "Cloud Smart Parking API",
-  "version": "1.0.0",
-  "databaseMode": "aws",
-  "timestamp": "2026-11-13T22:30:00.000Z"
-}
-```
+When the account's organization policy permits CloudFormation, ECR, ECS, and DynamoDB, use [the Fargate deployment guide](fargate-deployment.md) for managed persistence and Cognito authentication. The [EC2-independent CloudFormation template](fargate-app.yml) remains ready for that migration.

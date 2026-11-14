@@ -7,9 +7,6 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/responsive.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <!-- Top Navigation -->
@@ -25,7 +22,7 @@
       <li><a href="index.html" class="nav-link">Home</a></li>
       <li><a href="dashboard.html" class="nav-link">Live Dashboard</a></li>
       <li><a href="booking.html" class="nav-link active">Book a Slot</a></li>
-      <li><a href="admin.html" class="nav-link">Admin Console</a></li>
+      <li hidden data-admin-only><a href="admin.html" class="nav-link">Staff console</a></li>
     </ul>
 
     <div class="nav-actions">
@@ -42,11 +39,7 @@
         <h1 class="page-title">Parking Bay Reservation</h1>
         <p class="page-subtitle">Reserve guaranteed parking slots protected by DynamoDB conditional locking</p>
       </div>
-      <div>
-        <span style="font-size: 0.85rem; color: var(--text-dim);">Logged in as:</span>
-        <strong id="display-user-id" style="color: var(--accent-cyan); margin-left: 0.25rem;">driver-xxxx</strong>
-        <button class="btn btn-secondary btn-sm" onclick="changeUserId()" style="margin-left: 0.5rem;">Switch</button>
-      </div>
+      <div class="account-chip"><span>Signed in as</span><strong id="display-user-email">Loading account…</strong><button class="btn btn-secondary btn-sm" id="sign-out-btn" type="button">Sign out</button></div>
     </div>
 
     <div style="display: grid; grid-template-columns: 1fr 1.25fr; gap: 2rem; align-items: start;">
@@ -69,7 +62,8 @@
 
           <div class="form-group">
             <label class="form-label" for="vehicle-input">Vehicle Registration Number *</label>
-            <input type="text" id="vehicle-input" class="form-control" placeholder="e.g. KA-01-MJ-4050" required>
+            <input type="text" id="vehicle-input" class="form-control" placeholder="e.g. KA-01-MJ-4050" required maxlength="16" autocapitalize="characters" autocomplete="off" aria-describedby="vehicle-help">
+            <small class="field-help" id="vehicle-help">Enter an Indian registration plate, including Bharat-series plates.</small>
           </div>
 
           <div class="form-group">
@@ -83,12 +77,12 @@
             </select>
           </div>
 
-          <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--accent-blue); padding: 0.85rem; border-radius: 4px; margin-bottom: 1.5rem; font-size: 0.8rem; color: var(--text-muted);">
-            💡 <strong>Cloud Concurrency Guarantee:</strong> DynamoDB evaluates conditional write <code>#status = 'FREE'</code> at moment of execution to prevent duplicate slot bookings.
+          <div class="booking-note">
+            <strong>Your space is held once the reservation is confirmed.</strong> If another driver reserves first, choose a different available bay.
           </div>
 
           <button type="submit" class="btn btn-primary" id="submit-booking-btn" style="width: 100%;">
-            Confirm & Reserve Slot
+            Confirm reservation
           </button>
         </form>
       </div>
@@ -96,7 +90,7 @@
       <!-- Active Reservations & Booking History -->
       <div>
         <!-- Instant Confirmation Card (Hidden by default) -->
-        <div id="confirmation-card" class="card" style="display: none; border-color: var(--status-free); margin-bottom: 1.5rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.9) 100%);">
+        <div id="confirmation-card" class="card booking-confirmation" hidden>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <span style="font-size: 1.5rem;">🎉</span>
@@ -152,6 +146,7 @@
   </footer>
 
   <script src="js/api.js"></script>
+  <script src="js/auth-ui.js"></script>
   <script src="js/booking.js"></script>
 </body>
 </html>

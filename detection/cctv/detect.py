@@ -25,10 +25,14 @@ def load_config(config_path):
 
 def send_detection_to_api(api_url, payload):
     data = json.dumps(payload).encode('utf-8')
+    headers = {'Content-Type': 'application/json'}
+    detection_key = os.environ.get('DETECTION_API_KEY')
+    if detection_key:
+        headers['x-detection-key'] = detection_key
     req = urllib.request.Request(
         api_url,
         data=data,
-        headers={'Content-Type': 'application/json'}
+        headers=headers
     )
     try:
         with urllib.request.urlopen(req, timeout=4) as response:

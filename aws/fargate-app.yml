@@ -1,0 +1,302 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Smart parking API on ECS Fargate with Cognito, DynamoDB, and an internet-facing ALB.
+Parameters:
+  ImageUri:
+    Type: String
+    Description: ECR image URI including tag.
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: Optional ACM certificate ARN in this Region. Leave blank for temporary HTTP access.
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-vpc'}]
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway}
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties: {RouteTableId: !Ref PublicRouteTable, DestinationCidrBlock: 0.0.0.0/0, GatewayId: !Ref InternetGateway}
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.42.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-public-a'}]
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.42.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-public-b'}]
+  SubnetRouteA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PublicSubnetA, RouteTableId: !Ref PublicRouteTable}
+  SubnetRouteB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PublicSubnetB, RouteTableId: !Ref PublicRouteTable}
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTP and optional HTTPS ingress to the application load balancer.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0}
+        - !If [HasCertificate, {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}, !Ref AWS::NoValue]
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow API traffic only from the load balancer.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 5000, ToPort: 5000, SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup}
+  ParkingSlotsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-ParkingSlots'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: slotId, AttributeType: S}]
+      KeySchema: [{AttributeName: slotId, KeyType: HASH}]
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+  BookingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-Bookings'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: bookingId, AttributeType: S}
+        - {AttributeName: userId, AttributeType: S}
+        - {AttributeName: slotId, AttributeType: S}
+      KeySchema: [{AttributeName: bookingId, KeyType: HASH}]
+      GlobalSecondaryIndexes:
+        - IndexName: userId-index
+          KeySchema: [{AttributeName: userId, KeyType: HASH}]
+          Projection: {ProjectionType: ALL}
+        - IndexName: slotId-index
+          KeySchema: [{AttributeName: slotId, KeyType: HASH}]
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+  DetectionHistoryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${AWS::StackName}-DetectionHistory'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: eventId, AttributeType: S}
+        - {AttributeName: slotId, AttributeType: S}
+        - {AttributeName: timestamp, AttributeType: S}
+      KeySchema: [{AttributeName: eventId, KeyType: HASH}]
+      GlobalSecondaryIndexes:
+        - IndexName: slotId-timestamp-index
+          KeySchema:
+            - {AttributeName: slotId, KeyType: HASH}
+            - {AttributeName: timestamp, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-users'
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 10
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      AccountRecoverySetting:
+        RecoveryMechanisms: [{Name: verified_email, Priority: 1}]
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-web'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits: {AccessToken: hours, IdToken: hours, RefreshToken: days}
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: parking-admin, UserPoolId: !Ref UserPool, Description: Smart parking administrators}
+  DetectionSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AWS::StackName}/detection-api-key'
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: true
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${AWS::StackName}-cluster'
+      ClusterSettings: [{Name: containerInsights, Value: enabled}]
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: {LogGroupName: !Sub '/ecs/${AWS::StackName}', RetentionInDays: 30}
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy]
+      Policies:
+        - PolicyName: ReadDetectionSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement: [{Effect: Allow, Action: [secretsmanager:GetSecretValue], Resource: !Ref DetectionSecret}]
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}]
+      Policies:
+        - PolicyName: ParkingRuntimeDataAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Scan, dynamodb:Query, dynamodb:DescribeTable, dynamodb:TransactWriteItems]
+                Resource:
+                  - !GetAtt ParkingSlotsTable.Arn
+                  - !GetAtt BookingsTable.Arn
+                  - !Sub '${BookingsTable.Arn}/index/*'
+                  - !GetAtt DetectionHistoryTable.Arn
+                  - !Sub '${DetectionHistoryTable.Arn}/index/*'
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-api'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      RuntimePlatform: {OperatingSystemFamily: LINUX, CpuArchitecture: X86_64}
+      ContainerDefinitions:
+        - Name: app
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings: [{ContainerPort: 5000, Protocol: tcp}]
+          Environment:
+            - {Name: NODE_ENV, Value: production}
+            - {Name: PORT, Value: '5000'}
+            - {Name: DB_MODE, Value: aws}
+            - {Name: AWS_REGION, Value: !Ref AWS::Region}
+            - {Name: AUTH_MODE, Value: cognito}
+            - {Name: COGNITO_REGION, Value: !Ref AWS::Region}
+            - {Name: COGNITO_USER_POOL_ID, Value: !Ref UserPool}
+            - {Name: COGNITO_CLIENT_ID, Value: !Ref UserPoolClient}
+            - {Name: DYNAMODB_TABLE_PARKING_SLOTS, Value: !Sub '${AWS::StackName}-ParkingSlots'}
+            - {Name: DYNAMODB_TABLE_BOOKINGS, Value: !Sub '${AWS::StackName}-Bookings'}
+            - {Name: DYNAMODB_TABLE_DETECTION_HISTORY, Value: !Sub '${AWS::StackName}-DetectionHistory'}
+          Secrets: [{Name: DETECTION_API_KEY, ValueFrom: !Ref DetectionSecret}]
+          HealthCheck:
+            Command: [CMD-SHELL, "node -e \"fetch('http://127.0.0.1:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref Vpc
+      TargetType: ip
+      Port: 5000
+      Protocol: HTTP
+      HealthCheckPath: /api/health
+      Matcher: {HttpCode: '200'}
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - !If
+          - HasCertificate
+          - {Type: redirect, RedirectConfig: {Protocol: HTTPS, Port: '443', StatusCode: HTTP_301}}
+          - {Type: forward, TargetGroupArn: !Ref TargetGroup}
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates: [{CertificateArn: !Ref CertificateArn}]
+      DefaultActions: [{Type: forward, TargetGroupArn: !Ref TargetGroup}]
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: HttpListener
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-service'
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      LoadBalancers:
+        - {ContainerName: app, ContainerPort: 5000, TargetGroupArn: !Ref TargetGroup}
+Outputs:
+  ApplicationUrl:
+    Description: HTTPS if a certificate was supplied; otherwise temporary HTTP.
+    Value: !If [HasCertificate, !Sub 'https://${LoadBalancer.DNSName}', !Sub 'http://${LoadBalancer.DNSName}']
+  LoadBalancerDnsName: {Value: !GetAtt LoadBalancer.DNSName}
+  UserPoolId: {Value: !Ref UserPool}
+  UserPoolClientId: {Value: !Ref UserPoolClient}
+  DetectionSecretArn: {Value: !Ref DetectionSecret}
+  ParkingSlotsTableName: {Value: !Sub '${AWS::StackName}-ParkingSlots'}
+  BookingsTableName: {Value: !Sub '${AWS::StackName}-Bookings'}
+  DetectionHistoryTableName: {Value: !Sub '${AWS::StackName}-DetectionHistory'}

@@ -1,290 +1,137 @@
-# Cloud-Based Smart Parking Management System
+# SmartPark — Cloud Smart Parking
 
-[![AWS DynamoDB](https://img.shields.io/badge/AWS-DynamoDB-blue.svg?logo=amazon-aws)](https://aws.amazon.com/dynamodb/)
-[![Node.js](https://img.shields.io/badge/Node.js-v22-green.svg?logo=node.js)](https://nodejs.org/)
-[![Express.js](https://img.shields.io/badge/Express-4.21-lightgrey.svg?logo=express)](https://expressjs.com/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-Python-orange.svg?logo=opencv)](https://opencv.org/)
-[![ESP32](https://img.shields.io/badge/ESP32-IoT_Sensors-red.svg)](https://www.espressif.com/)
-[![Tests](https://img.shields.io/badge/Tests-15%2F15_Passing-brightgreen.svg)]()
+SmartPark is a parking occupancy and reservation app. Drivers can view bay availability, create and manage reservations, and facility staff can manage bays and inspect detection activity. Occupancy can be supplied by a simulator, an IoT sensor, or an optional camera detector.
 
-A cloud-native smart parking platform that automatically detects parking slot occupancy using a multi-modal edge pipeline:
-1. **IoT Sensor Telemetry:** ESP32 microcontrollers with ultrasonic/IR sensors communicating over MQTT to AWS IoT Core.
-2. **CCTV Computer Vision:** Python and OpenCV analyzing video frames using adaptive thresholding and ROI pixel density metrics.
-3. **JSON Simulation Engine:** Periodic automated vehicle turnover generator for rapid evaluation.
+The repository supports two deployment paths. The live preview currently runs as Docker containers on an existing EC2 host with local persistent storage. An ECS Fargate, Cognito, and DynamoDB stack is also included for accounts where those AWS resources are available.
 
-Occupancy data is processed and stored in **Amazon DynamoDB** with conditional transactions preventing double-booking, and surfaced via an enterprise dark navy responsive dashboard with **Chart.js** analytics.
+## What it does
 
----
+- Shows parking bays as **available**, **occupied**, **reserved**, or **unverified**.
+- Creates reservations for available bays and prevents a bay from being reserved twice.
+- Lets a driver cancel or delete their own reservation. Deleting an active reservation first cancels it and releases the space; the detection audit event remains.
+- Validates Indian vehicle registration numbers on the form and API, including Bharat-series registrations.
+- Provides a separate staff sign-in choice and a facility console for staff accounts assigned the administrator role.
+- Accepts occupancy updates from the Node simulator, a virtual sensor, ESP32 examples, and an optional CPU-only OpenCV camera worker.
 
-## 🌟 Key Features
+## Technology stack
 
-- **Live Multi-Zone Visualization:** Real-time parking facility map with color-coded bay status:
-  - 🟢 **FREE:** Vacant and available for immediate booking.
-  - 🔴 **OCCUPIED:** Vehicle physically detected by sensor or camera.
-  - 🟡 **RESERVED:** Bay reserved by a driver; awaiting vehicle arrival.
-  - ⚪ **UNKNOWN:** Bay sensor reading unverified.
-- **Atomic Reservation Concurrency:** Employs DynamoDB conditional writes (`#status = 'FREE'`) to guarantee that concurrent booking requests cannot double-book the same bay.
-- **Multi-Source Conflict Resolution:** Physical sensors reporting `FREE` on a `RESERVED` bay will not silently overwrite a user's reservation until the user cancels or the reservation expires.
-- **Admin & Analytics Console:** Real-time facility KPI monitoring, bay creation/deletion, manual status overrides (`source: "ADMIN"`), and Chart.js occupancy distribution charts.
-- **Zero-Credential Cloud Security:** Architecture utilizes AWS IAM Instance Profiles on EC2, eliminating hardcoded access keys in code or configuration.
+| Area | Technologies |
+|---|---|
+| Web UI | HTML, CSS, vanilla JavaScript; same-origin REST calls |
+| API | Node.js 24, Express 4, JSON REST endpoints |
+| Authentication | bcryptjs password hashes and signed HTTP-only cookies in single-host mode; Amazon Cognito in the Fargate configuration |
+| Data | Persistent local JSON store for the current single-host preview; Amazon DynamoDB for the Fargate configuration |
+| AWS | ECS Fargate, ECR, ALB, IAM, Cognito, DynamoDB, Secrets Manager, CloudWatch in the optional managed stack; IoT Core instructions for sensor telemetry |
+| Containers and TLS | Docker, Docker Compose, Caddy 2.10; Caddy obtains and renews public certificates for configured hostnames |
+| Detection | Node.js simulator and virtual sensor; Python 3.12, OpenCV headless, NumPy, Requests for the optional CPU camera worker |
 
----
+The camera image does not install PyTorch, CUDA, GPU runtimes, or GUI libraries.
 
-## 🏗️ System Architecture
+## Architecture
+
+### Current single-host preview
 
 ```mermaid
-flowchart TD
-    subgraph Edge ["Edge Telemetry"]
-        ESP["ESP32 Microcontroller<br/>(Ultrasonic / IR Sensor)"]
-        CCTV["CCTV Edge Node<br/>(Python + OpenCV)"]
-        SIM["JSON Simulator<br/>(Node.js Worker)"]
-    end
-
-    subgraph AWS ["Amazon Web Services"]
-        IoTCore["AWS IoT Core (MQTT)"]
-        EC2["Amazon EC2 (Node.js Express)"]
-        IAM["AWS IAM Role"]
-        DDB1[("DynamoDB: ParkingSlots")]
-        DDB2[("DynamoDB: Bookings")]
-        DDB3[("DynamoDB: DetectionHistory")]
-    end
-
-    subgraph Web ["Web Client"]
-        UserUI["Driver Dashboard & Booking"]
-        AdminUI["Admin & Analytics Console"]
-    end
-
-    ESP -->|MQTT TLS| IoTCore
-    IoTCore --> DDB1
-    CCTV -->|REST API POST| EC2
-    SIM -->|REST API POST| EC2
-    EC2 --- IAM
-    IAM --> DDB1 & DDB2 & DDB3
-    UserUI <-->|HTTP/REST| EC2
-    AdminUI <-->|HTTP/REST + Key| EC2
+flowchart LR
+    Browser[Driver or staff browser] -->|HTTPS| Caddy[Caddy reverse proxy]
+    Caddy -->|private Docker network| App[Node.js + Express container]
+    App --> Data[(Persistent Docker volume)]
+    Simulator[Simulator / sensor / camera worker] -->|Detection API key| App
 ```
 
----
+The live preview uses a Docker Compose app and Caddy on an existing EC2 host. The Node app uses `DB_MODE=local` and `AUTH_MODE=local`, with data stored in a Docker volume. This is a single-host setup; it is not the DynamoDB/Cognito stack. Details and operations are in [`aws/ec2-deployment.md`](aws/ec2-deployment.md).
 
-## 📁 Repository & Folder Structure
+### Optional managed AWS stack
 
-```
-cloud-smart-parking-system/
-
-├── frontend/
-│   ├── index.html
-│   ├── dashboard.html
-│   ├── booking.html
-│   ├── admin.html
-│   │
-│   ├── css/
-│   │   ├── style.css
-│   │   ├── dashboard.css
-│   │   └── responsive.css
-│   │
-│   ├── js/
-│   │   ├── api.js
-│   │   ├── dashboard.js
-│   │   ├── booking.js
-│   │   └── admin.js
-│   │
-│   └── assets/
-│       ├── images/
-│       └── icons/
-│
-├── backend/
-│   ├── server.js
-│   ├── package.json
-│   ├── .env.example
-│   │
-│   ├── config/
-│   │   ├── dynamodb.js
-│   │   └── aws.js
-│   │
-│   ├── routes/
-│   │   ├── parkingRoutes.js
-│   │   ├── bookingRoutes.js
-│   │   ├── adminRoutes.js
-│   │   └── detectionRoutes.js
-│   │
-│   ├── controllers/
-│   │   ├── parkingController.js
-│   │   ├── bookingController.js
-│   │   ├── adminController.js
-│   │   └── detectionController.js
-│   │
-│   ├── services/
-│   │   ├── parkingService.js
-│   │   ├── bookingService.js
-│   │   └── detectionService.js
-│   │
-│   ├── middleware/
-│   │   └── authMiddleware.js
-│   │
-│   └── models/
-│       └── parkingModel.js
-│
-├── detection/
-│   ├── sample-data/
-│   │   └── parking-data.json
-│   │
-│   ├── simulator/
-│   │   └── simulator.js
-│   │
-│   ├── sensor/
-│   │   ├── README.md
-│   │   ├── virtual_sensor.js
-│   │   └── esp32-code/
-│   │       └── esp32_parking_sensor.ino
-│   │
-│   └── cctv/
-│       ├── detect.py
-│       ├── slot_config.json
-│       ├── requirements.txt
-│       ├── sample-video/
-│       │   ├── generate_synthetic_video.py
-│       │   └── sample_parking.mp4
-│       └── README.md
-│
-├── aws/
-│   ├── architecture.md
-│   ├── dynamodb-schema.md
-│   ├── ec2-deployment.md
-│   └── iot-core-setup.md
-│
-├── docs/
-│   ├── project-overview.md
-│   ├── screenshots/
-│   └── project-report.md
-│
-├── .gitignore
-└── README.md
+```mermaid
+flowchart LR
+    Browser[Browser] --> ALB[Application Load Balancer]
+    ALB --> ECS[ECS Fargate task]
+    ECS --> DDB[(DynamoDB tables)]
+    ECS --> Cognito[Amazon Cognito]
+    ECS --> Secrets[Secrets Manager]
+    ECS --> Logs[CloudWatch Logs]
+    Sensor[Sensor / simulator] -->|Detection API key| ALB
 ```
 
-### 🔒 Environment Configuration & Security
+The CloudFormation template and deployment guide are in [`aws/fargate-app.yml`](aws/fargate-app.yml) and [`aws/fargate-deployment.md`](aws/fargate-deployment.md). This path needs AWS credentials and permission to create the listed resources.
 
-- **`.env.example`** is committed in the GitHub repository as a configuration template.
-- **`.env`** is **strictly ignored** by `.gitignore` to prevent committing secrets or credentials.
-- To configure your local environment, copy the template:
-  ```bash
-  cd backend
-  cp .env.example .env     # On Linux/macOS
-  copy .env.example .env   # On Windows
-  ```
+## Run locally
 
+### Docker Compose
 
----
+Requirements: Docker Engine with the Compose plugin.
 
-## 🚀 Quickstart Guide
-
-### 1. Prerequisites
-- [Node.js](https://nodejs.org/) (v18 or higher; v22 recommended)
-- [Python](https://www.python.org/) (v3.10 or higher with OpenCV installed)
-
-### 2. Install & Run the Backend
 ```bash
-# Navigate to backend directory
+export LOCAL_SESSION_SECRET="$(openssl rand -hex 32)"
+export DETECTION_API_KEY="$(openssl rand -hex 32)"
+# Optional: one or more staff emails, comma-separated.
+export LOCAL_ADMIN_EMAILS="staff@example.com,manager@example.com"
+docker compose up --build
+```
+
+Open [http://localhost:5000](http://localhost:5000). Create a driver account from **Sign in**. Staff sign in using **Facility staff**; selecting the staff role does not grant access by itself. The email must be listed in `LOCAL_ADMIN_EMAILS`.
+
+The Compose volume persists local data across container restarts. To reset local demo data, remove the `app-data` volume deliberately with `docker compose down -v`.
+
+### Run the API directly
+
+```bash
 cd backend
-
-# Install dependencies
-npm install
-
-# Start development server
+cp .env.example .env
+npm ci
 npm start
 ```
-The server will start at **`http://localhost:5000`** with local DynamoDB persistence active by default.
 
-### 3. Open the Web Application
-Open your web browser and visit:
-- **Landing Page:** `http://localhost:5000/`
-- **Live Parking Grid:** `http://localhost:5000/dashboard.html`
-- **Reserve a Slot:** `http://localhost:5000/booking.html`
-- **Admin & Analytics:** `http://localhost:5000/admin.html` *(Default Admin Key: `admin-secret-key-smart-parking-2026`)*
+Set a strong, private `LOCAL_SESSION_SECRET` in `backend/.env` before using local accounts. Add any local staff email addresses to `LOCAL_ADMIN_EMAILS`. Do not commit `.env` files, passwords, AWS credentials, or API keys.
 
-### 4. Run the JSON Simulation Engine
-In a separate terminal, start the periodic vehicle simulation:
-```bash
-# Run continuous stochastic simulation
-node detection/simulator/simulator.js
+## Detection inputs
 
-# Or run a single cycle for verification
-node detection/simulator/simulator.js --once
-```
-Watch the slots transition between FREE and OCCUPIED on the live dashboard in real time!
+The API accepts trusted occupancy updates at `POST /api/detection/update` using the `x-detection-key` header. Set `PARKING_API_URL` and `DETECTION_API_KEY` in each publisher's environment; never put the key in frontend code or commit it.
 
-### 5. Run the OpenCV CCTV Computer Vision Node
-Generate the synthetic parking surveillance video and run frame analysis:
-```bash
-# Step 1: Generate sample video
-python detection/cctv/sample-video/generate_synthetic_video.py
+- Run one simulator cycle: `node detection/simulator/simulator.js --once`
+- Run the continuous simulator: `node detection/simulator/simulator.js`
+- Virtual sensor instructions: [`detection/sensor/README.md`](detection/sensor/README.md)
+- CCTV detector and CPU container: [`detection/cctv/README.md`](detection/cctv/README.md)
+- AWS IoT Core setup: [`aws/iot-core-setup.md`](aws/iot-core-setup.md)
 
-# Step 2: Run vehicle detection
-python detection/cctv/detect.py --frames=60
+## API overview
 
-# Or with graphical OpenCV window
-python detection/cctv/detect.py --show
-```
+- `GET /api/health` — service and storage health
+- `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` — account sessions
+- `GET /api/parking/slots`, `GET /api/parking/availability` — public bay status
+- `GET/POST /api/bookings`, `PUT /api/bookings/:id/cancel`, `DELETE /api/bookings/:id` — authenticated, owner-scoped reservations
+- `GET /api/admin/dashboard` and `/api/admin/slots` — administrator-only facility management
+- `POST /api/detection/update` — publisher-key-protected occupancy ingestion
 
-### 6. Run the Virtual IoT Sensor Cluster
-To simulate ESP32 ultrasonic sensors measuring vehicle distances:
-```bash
-# Run one reading cycle
-node detection/sensor/virtual_sensor.js --once
+## Repository map
 
-# Or run continuous sensor stream
-node detection/sensor/virtual_sensor.js
+```text
+backend/                 Express API, auth, data adapters, services, and API checks
+frontend/                Public pages, booking flow, staff login, and admin console
+detection/simulator/     Node.js occupancy simulator
+detection/sensor/        Virtual sensor and ESP32 example
+
+detection/cctv/          CPU-only OpenCV sample detector and container
+aws/                     AWS templates, setup, and deployment guides
+Dockerfile               Node app image
+Caddyfile                Reverse proxy, TLS, and hostname routing
+docker-compose.yml        Local development stack
+docker-compose.ec2.yml    Existing-host deployment stack
 ```
 
----
+## Deployment and current hostname
 
-## 🧪 Running Automated Tests
+- Existing EC2 Compose deployment: [`aws/ec2-deployment.md`](aws/ec2-deployment.md)
+- ECS Fargate deployment: [`aws/fargate-deployment.md`](aws/fargate-deployment.md)
+- DynamoDB table design: [`aws/dynamodb-schema.md`](aws/dynamodb-schema.md)
 
-Run the comprehensive integration test suite to verify health checks, slot queries, atomic bookings, race-condition rejection, cancellation, and admin authentication:
-```bash
-cd backend
-npm test
-```
-**Test Results:** `15 passed, 0 failed` ✅
+The current preview hostname is IP-mapped DNS. Replace it with a domain you control for a clean branded URL; the domain's DNS must point to the host, and Caddy must be configured for that hostname before the old address can be removed. See the EC2 guide for the current host and TLS setup.
 
----
+## Security notes
 
-## 📡 REST API Reference
-
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/health` | Backend health, uptime & database mode | Public |
-| `GET` | `/api/parking/slots` | Retrieve all registered parking bays | Public |
-| `GET` | `/api/parking/availability` | Facility availability metrics & slot list | Public |
-| `GET` | `/api/parking/slots/:id` | Get specific bay details | Public |
-| `POST` | `/api/bookings` | Atomically reserve an available parking bay | User ID |
-| `GET` | `/api/bookings` | Retrieve user bookings (optional `?userId=`) | User ID |
-| `PUT` | `/api/bookings/:id/cancel` | Cancel booking & release bay back to FREE | User ID |
-| `GET` | `/api/admin/dashboard` | Facility statistics & Chart.js telemetry | Admin Key |
-| `POST` | `/api/admin/slots` | Register a new parking bay | Admin Key |
-| `DELETE` | `/api/admin/slots/:id` | Remove a parking bay from the facility | Admin Key |
-| `PUT` | `/api/admin/slots/:id/status` | Manual status override (`source: "ADMIN"`) | Admin Key |
-| `POST` | `/api/detection/update` | Ingest detection reading (Single or Batch) | Node |
-| `GET` | `/api/detection/history` | Audit trail of bay occupancy changes | Public |
-
----
-
-## ☁️ AWS Cloud Configuration
-
-To connect the application to live AWS infrastructure:
-1. Update `backend/.env`:
-   ```ini
-   DB_MODE=aws
-   AWS_REGION=us-east-1
-   ```
-2. Follow the detailed guides in the `aws/` directory:
-   - [AWS Architecture & Data Flow](aws/architecture.md)
-   - [Amazon DynamoDB Schema & GSIs](aws/dynamodb-schema.md)
-   - [Amazon EC2 Ubuntu Production Deployment](aws/ec2-deployment.md)
-   - [AWS IoT Core & ESP32 Setup](aws/iot-core-setup.md)
-
----
-
-## 📄 Academic Project Details
-- **Subject:** Cloud Computing (Mini Project)
-- **Student Project:** Cloud-Based Smart Parking Management System
-- **Technologies:** AWS EC2, AWS DynamoDB, AWS IoT Core, Node.js, Express, OpenCV, Python, ESP32, Chart.js.
+- The admin HTML route and admin API both verify the signed-in account's staff role on the server.
+- Drivers can access only their own bookings, including delete and cancel operations.
+- Authentication cookies are HTTP-only, same-site, and Secure in production.
+- Detection publishing keys are server-side secrets, not browser credentials.
+- The current single-host data volume needs backups and should run as one app replica. Use the Fargate/DynamoDB deployment for managed multi-service persistence when the AWS account permits it.

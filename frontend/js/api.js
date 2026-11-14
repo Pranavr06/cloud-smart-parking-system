@@ -4,31 +4,6 @@
 
 const API_BASE_URL = '/api';
 
-// Admin Key Storage
-function getAdminKey() {
-  return localStorage.getItem('smart_parking_admin_key') || 'admin-secret-key-smart-parking-2026';
-}
-
-function setAdminKey(key) {
-  localStorage.setItem('smart_parking_admin_key', key);
-}
-
-// Current User ID Storage
-function getCurrentUser() {
-  let userId = localStorage.getItem('smart_parking_user_id');
-  if (!userId) {
-    userId = 'driver-' + Math.floor(1000 + Math.random() * 9000);
-    localStorage.setItem('smart_parking_user_id', userId);
-  }
-  return userId;
-}
-
-function setCurrentUser(userId) {
-  if (userId) {
-    localStorage.setItem('smart_parking_user_id', userId.trim());
-  }
-}
-
 /**
  * Core Fetch Wrapper
  */
@@ -36,25 +11,23 @@ async function request(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
   const headers = {
     'Content-Type': 'application/json',
-    'x-user-id': getCurrentUser(),
     ...options.headers
   };
-
-  if (options.requireAdmin) {
-    headers['x-admin-key'] = getAdminKey();
-  }
 
   try {
     const response = await fetch(url, {
       ...options,
-      headers
+      headers,
+      credentials: 'same-origin'
     });
 
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
       const errorMsg = (data && data.error) ? data.error : `HTTP error: ${response.status} ${response.statusText}`;
-      throw new Error(errorMsg);
+      const error = new Error(errorMsg);
+      error.status = response.status;
+      throw error;
     }
 
     return data;
@@ -79,7 +52,12 @@ function showToast(message, type = 'info', duration = 3500) {
   toast.className = `toast ${type}`;
 
   const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : type === 'warning' ? '⚠' : 'ℹ';
-  toast.innerHTML = `<span style="font-weight:bold">${icon}</span> <span>${message}</span>`;
+  const mark = document.createElement('span');
+  mark.style.fontWeight = 'bold';
+  mark.textContent = icon;
+  const text = document.createElement('span');
+  text.textContent = message;
+  toast.append(mark, text);
 
   container.appendChild(toast);
 
@@ -95,11 +73,28 @@ function showToast(message, type = 'info', duration = 3500) {
  * Exported API Functions
  */
 window.ParkingAPI = {
-  getAdminKey,
-  setAdminKey,
-  getCurrentUser,
-  setCurrentUser,
   showToast,
+
+  // Account sessions use an HTTP-only cookie set by the same-origin API.
+  async signUp(email, password) {
+    return await request('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) });
+  },
+
+  async confirmSignUp(email, code) {
+    return await request('/auth/confirm', { method: 'POST', body: JSON.stringify({ email, code }) });
+  },
+
+  async signIn(email, password) {
+    return await request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+  },
+
+  async signOut() {
+    return await request('/auth/logout', { method: 'POST' });
+  },
+
+  async getSession() {
+    return await request('/auth/me');
+  },
 
   // Health
   async getHealth() {
@@ -127,9 +122,8 @@ window.ParkingAPI = {
     });
   },
 
-  async getBookings(userId = null) {
-    const query = userId ? `?userId=${encodeURIComponent(userId)}` : '';
-    return await request(`/bookings${query}`);
+  async getBookings() {
+    return await request('/bookings');
   },
 
   async getBooking(bookingId) {
@@ -142,15 +136,20 @@ window.ParkingAPI = {
     });
   },
 
+  async deleteBooking(bookingId) {
+    return await request(`/bookings/${encodeURIComponent(bookingId)}`, {
+      method: 'DELETE'
+    });
+  },
+
   // Admin APIs
   async getAdminDashboard() {
-    return await request('/admin/dashboard', { requireAdmin: true });
+    return await request('/admin/dashboard');
   },
 
   async addSlot(slotData) {
     return await request('/admin/slots', {
       method: 'POST',
-      requireAdmin: true,
       body: JSON.stringify(slotData)
     });
   },
@@ -158,23 +157,13 @@ window.ParkingAPI = {
   async removeSlot(slotId) {
     return await request(`/admin/slots/${encodeURIComponent(slotId)}`, {
       method: 'DELETE',
-      requireAdmin: true
     });
   },
 
   async updateSlotStatusManual(slotId, status, note = '') {
     return await request(`/admin/slots/${encodeURIComponent(slotId)}/status`, {
       method: 'PUT',
-      requireAdmin: true,
       body: JSON.stringify({ status, note })
-    });
-  },
-
-  // Detection APIs
-  async sendDetection(data) {
-    return await request('/detection/update', {
-      method: 'POST',
-      body: JSON.stringify(data)
     });
   },
 

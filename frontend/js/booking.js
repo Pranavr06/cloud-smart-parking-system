@@ -1,217 +1,158 @@
-/**
- * Booking Controller
- * Manages slot reservations, active booking tracking, and cancellation flow.
- */
-
 let availableSlots = [];
 
-function getUrlParameter(name) {
-  const params = new URLSearchParams(window.location.search);
-  return params.get(name);
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
 }
 
-function updateDisplayUser() {
-  const user = ParkingAPI.getCurrentUser();
-  const el = document.getElementById('display-user-id');
-  if (el) el.textContent = user;
+function getRequestedSlot() {
+  return new URLSearchParams(window.location.search).get('slotId') || '';
 }
 
-function changeUserId() {
-  const current = ParkingAPI.getCurrentUser();
-  const newId = prompt('Enter Driver / User ID:', current);
-  if (newId && newId.trim()) {
-    ParkingAPI.setCurrentUser(newId.trim());
-    updateDisplayUser();
-    loadAvailableSlots();
-    loadUserBookings();
-    ParkingAPI.showToast(`Switched user to ${newId.trim()}`, 'info');
-  }
+function validateVehicleRegistration(input) {
+  const value = input.value.trim().toUpperCase();
+  const compact = value.replace(/[\s-]/g, '');
+  const standard = /^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$/.test(compact);
+  const bharat = /^\d{2}BH\d{4}[A-Z]{1,2}$/.test(compact);
+  input.setCustomValidity(!value || standard || bharat
+    ? ''
+    : 'Enter a valid Indian registration, such as KA-01-MJ-4050 or 22BH1234AA.');
 }
 
 async function loadAvailableSlots() {
   const select = document.getElementById('slot-select');
   if (!select) return;
-
   try {
-    const res = await ParkingAPI.getAvailability();
-    if (!res || !res.success) throw new Error('Failed to retrieve slots');
-
-    const slots = res.data.slots || [];
-    availableSlots = slots.filter(s => s.status === 'FREE');
-
-    if (availableSlots.length === 0) {
-      select.innerHTML = '<option value="">No FREE slots currently available (All occupied/reserved)</option>';
+    const response = await ParkingAPI.getAvailability();
+    availableSlots = (response.data.slots || []).filter(slot => slot.status === 'FREE');
+    const button = document.getElementById('submit-booking-btn');
+    if (!availableSlots.length) {
+      select.innerHTML = '<option value="">No spaces are available right now</option>';
       select.disabled = true;
-      const submitBtn = document.getElementById('submit-booking-btn');
-      if (submitBtn) submitBtn.disabled = true;
+      button.disabled = true;
       return;
     }
-
+    const requested = getRequestedSlot().toUpperCase();
     select.disabled = false;
-    const submitBtn = document.getElementById('submit-booking-btn');
-    if (submitBtn) submitBtn.disabled = false;
-
-    const requestedSlot = getUrlParameter('slotId');
-
-    let options = '<option value="">-- Choose a Parking Bay --</option>';
-    availableSlots.forEach(slot => {
-      const isSelected = requestedSlot && requestedSlot.toUpperCase() === slot.slotId ? 'selected' : '';
-      options += `<option value="${slot.slotId}" ${isSelected}>Slot ${slot.slotId} - ${slot.parkingArea || 'General'}</option>`;
-    });
-
-    select.innerHTML = options;
-  } catch (err) {
-    console.error('Error loading slots:', err);
-    select.innerHTML = '<option value="">Error connecting to AWS cloud</option>';
+    button.disabled = false;
+    select.innerHTML = '<option value="">Choose a space</option>' + availableSlots.map(slot => {
+      const slotId = escapeHtml(slot.slotId);
+      const area = escapeHtml(slot.parkingArea || 'Main parking');
+      const selected = slot.slotId === requested ? ' selected' : '';
+      return `<option value="${slotId}"${selected}>${slotId} · ${area}</option>`;
+    }).join('');
+  } catch (error) {
+    select.innerHTML = '<option value="">Availability is temporarily unavailable</option>';
+    select.disabled = true;
+    document.getElementById('submit-booking-btn').disabled = true;
+    ParkingAPI.showToast('Could not load available spaces.', 'error');
   }
 }
 
 async function loadUserBookings() {
   const container = document.getElementById('user-bookings-container');
   if (!container) return;
-
-  const userId = ParkingAPI.getCurrentUser();
-
+  container.innerHTML = '<p class="booking-empty">Loading your reservations…</p>';
   try {
-    const res = await ParkingAPI.getBookings(userId);
-    if (!res || !res.success) throw new Error('Failed to fetch bookings');
-
-    const bookings = res.data || [];
-
-    if (bookings.length === 0) {
-      container.innerHTML = `
-        <div style="text-align: center; padding: 2rem; color: var(--text-dim);">
-          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🅿️</div>
-          <p>No active or historical bookings found for <strong>${userId}</strong>.</p>
-        </div>
-      `;
+    const response = await ParkingAPI.getBookings();
+    const bookings = response.data || [];
+    if (!bookings.length) {
+      container.innerHTML = '<div class="booking-empty"><strong>No reservations yet.</strong><span>Your confirmed bookings will appear here.</span></div>';
       return;
     }
-
-    let html = '<div style="display: flex; flex-direction: column; gap: 0.85rem;">';
-
-    bookings.forEach(b => {
-      const isActive = b.status === 'ACTIVE';
-      const statusBadge = isActive
-        ? '<span class="badge badge-free">ACTIVE</span>'
-        : '<span class="badge badge-unknown">CANCELLED</span>';
-
-      const timeStr = b.bookingTime ? new Date(b.bookingTime).toLocaleString() : '--';
-
-      html += `
-        <div class="card" style="padding: 1rem; background: rgba(15, 23, 42, 0.6); border: 1px solid ${isActive ? 'rgba(56, 189, 248, 0.3)' : 'rgba(255,255,255,0.06)'};">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <strong style="font-size: 1.15rem; color: #fff;">Slot ${b.slotId}</strong>
-              ${statusBadge}
-            </div>
-            <span style="font-size: 0.72rem; color: var(--text-dim); font-family: monospace;">${b.bookingId}</span>
-          </div>
-
-          <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted); margin-bottom: ${isActive ? '0.75rem' : '0'};">
-            <div>🚗 Vehicle: <strong style="color: #fff;">${b.vehicleNumber || 'N/A'}</strong></div>
-            <div>⏱️ ${b.durationMinutes || 60} mins</div>
-            <div>📅 ${timeStr}</div>
-          </div>
-
-          ${isActive ? `
-            <div style="display: flex; justify-content: flex-end; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.6rem;">
-              <button class="btn btn-danger btn-sm" onclick="cancelUserBooking('${b.bookingId}', '${b.slotId}')">
-                Cancel Reservation
-              </button>
-            </div>
-          ` : ''}
+    container.innerHTML = `<div class="booking-list">${bookings.map(booking => {
+      const active = booking.status === 'ACTIVE';
+      const status = active ? 'badge-free' : 'badge-unknown';
+      const date = booking.bookingTime ? new Date(booking.bookingTime).toLocaleString() : '—';
+      return `<article class="booking-entry">
+        <div class="booking-entry-top"><strong class="booking-bay">${escapeHtml(booking.slotId)}</strong><span class="badge ${status}">${escapeHtml(booking.status)}</span><span class="booking-reference">${escapeHtml(booking.bookingId)}</span></div>
+        <div class="booking-entry-details"><span><small>Vehicle</small>${escapeHtml(booking.vehicleNumber || '—')}</span><span><small>Duration</small>${escapeHtml(booking.durationMinutes || 60)} min</span><span><small>Reserved</small>${escapeHtml(date)}</span></div>
+        <div class="booking-entry-action">
+          ${active ? `<button class="btn btn-secondary btn-sm" data-cancel-booking="${escapeHtml(booking.bookingId)}" data-slot="${escapeHtml(booking.slotId)}">Cancel reservation</button>` : ''}
+          <button class="btn btn-danger btn-sm" data-delete-booking="${escapeHtml(booking.bookingId)}" data-slot="${escapeHtml(booking.slotId)}">Delete reservation</button>
         </div>
-      `;
-    });
-
-    html += '</div>';
-    container.innerHTML = html;
-  } catch (err) {
-    console.error('Error loading bookings:', err);
-    container.innerHTML = `<p style="color: var(--status-occupied);">Failed to load bookings: ${err.message}</p>`;
+      </article>`;
+    }).join('')}</div>`;
+    container.querySelectorAll('[data-cancel-booking]').forEach(button => button.addEventListener('click', () => cancelUserBooking(button.dataset.cancelBooking, button.dataset.slot)));
+    container.querySelectorAll('[data-delete-booking]').forEach(button => button.addEventListener('click', () => deleteUserBooking(button.dataset.deleteBooking, button.dataset.slot)));
+  } catch (error) {
+    container.innerHTML = '<p class="booking-empty">Your reservations could not be loaded. Please refresh and try again.</p>';
   }
 }
 
-async function handleBookingSubmit(e) {
-  e.preventDefault();
-
-  const slotId = document.getElementById('slot-select').value;
-  const vehicleNumber = document.getElementById('vehicle-input').value.trim();
-  const durationMinutes = document.getElementById('duration-select').value;
-  const userId = ParkingAPI.getCurrentUser();
-
-  if (!slotId) {
-    ParkingAPI.showToast('Please select an available parking slot', 'warning');
-    return;
-  }
-
-  const submitBtn = document.getElementById('submit-booking-btn');
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Processing DynamoDB Transaction...';
-
+async function handleBookingSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submitButton = document.getElementById('submit-booking-btn');
+  const payload = {
+    slotId: document.getElementById('slot-select').value,
+    vehicleNumber: document.getElementById('vehicle-input').value.trim().toUpperCase(),
+    durationMinutes: Number(document.getElementById('duration-select').value)
+  };
+  if (!payload.slotId) return ParkingAPI.showToast('Choose an available space first.', 'warning');
+  submitButton.disabled = true;
+  submitButton.textContent = 'Confirming…';
   try {
-    const res = await ParkingAPI.createBooking({
-      slotId,
-      userId,
-      vehicleNumber,
-      durationMinutes
-    });
-
-    if (res && res.success) {
-      ParkingAPI.showToast(`Slot ${slotId} reserved successfully!`, 'success');
-
-      // Populate confirmation card
-      const confCard = document.getElementById('confirmation-card');
-      document.getElementById('conf-id').textContent = res.data.bookingId;
-      document.getElementById('conf-slot').textContent = res.data.slotId;
-      document.getElementById('conf-vehicle').textContent = res.data.vehicleNumber;
-      document.getElementById('conf-duration').textContent = `${res.data.durationMinutes} Mins`;
-      confCard.style.display = 'block';
-
-      // Reset form
-      document.getElementById('booking-form').reset();
-
-      // Refresh list and slots
-      loadAvailableSlots();
-      loadUserBookings();
-    }
-  } catch (err) {
-    ParkingAPI.showToast(`Booking failed: ${err.message}`, 'error');
+    const response = await ParkingAPI.createBooking(payload);
+    const booking = response.data;
+    document.getElementById('conf-id').textContent = booking.bookingId;
+    document.getElementById('conf-slot').textContent = booking.slotId;
+    document.getElementById('conf-vehicle').textContent = booking.vehicleNumber;
+    document.getElementById('conf-duration').textContent = `${booking.durationMinutes} min`;
+    document.getElementById('confirmation-card').hidden = false;
+    form.reset();
+    ParkingAPI.showToast(`Space ${booking.slotId} is reserved.`, 'success');
+    await Promise.all([loadAvailableSlots(), loadUserBookings()]);
+  } catch (error) {
+    ParkingAPI.showToast(error.message || 'We could not complete the reservation.', 'error');
   } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Confirm & Reserve Slot';
+    submitButton.disabled = false;
+    submitButton.textContent = 'Confirm reservation';
   }
 }
 
 async function cancelUserBooking(bookingId, slotId) {
-  if (!confirm(`Are you sure you want to cancel your reservation for Slot ${slotId}?`)) {
-    return;
-  }
-
+  if (!window.confirm(`Cancel the reservation for space ${slotId}?`)) return;
   try {
-    const res = await ParkingAPI.cancelBooking(bookingId);
-    if (res && res.success) {
-      ParkingAPI.showToast(`Reservation for Slot ${slotId} cancelled`, 'info');
-      // Hide confirmation card if it matches
-      const confCard = document.getElementById('confirmation-card');
-      const confId = document.getElementById('conf-id').textContent;
-      if (confId === bookingId) {
-        confCard.style.display = 'none';
-      }
-      loadAvailableSlots();
-      loadUserBookings();
-    }
-  } catch (err) {
-    ParkingAPI.showToast(`Cancellation failed: ${err.message}`, 'error');
+    await ParkingAPI.cancelBooking(bookingId);
+    document.getElementById('confirmation-card').hidden = true;
+    ParkingAPI.showToast(`Reservation for ${slotId} cancelled.`, 'info');
+    await Promise.all([loadAvailableSlots(), loadUserBookings()]);
+  } catch (error) {
+    ParkingAPI.showToast(error.message || 'We could not cancel the reservation.', 'error');
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  updateDisplayUser();
+async function deleteUserBooking(bookingId, slotId) {
+  if (!window.confirm(`Delete the reservation for space ${slotId}? An active reservation will be cancelled and release its space first.`)) return;
+  try {
+    await ParkingAPI.deleteBooking(bookingId);
+    document.getElementById('confirmation-card').hidden = true;
+    ParkingAPI.showToast(`Reservation for ${slotId} deleted.`, 'success');
+    await Promise.all([loadAvailableSlots(), loadUserBookings()]);
+  } catch (error) {
+    ParkingAPI.showToast(error.message || 'We could not delete this reservation.', 'error');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const session = await ParkingAPI.getSession();
+    document.getElementById('display-user-email').textContent = session.data.email || 'Signed in';
+  } catch {
+    const next = encodeURIComponent('booking.html');
+    window.location.replace(`login.html?next=${next}`);
+    return;
+  }
+  document.getElementById('booking-form').addEventListener('submit', handleBookingSubmit);
+  const vehicleInput = document.getElementById('vehicle-input');
+  vehicleInput.addEventListener('input', () => validateVehicleRegistration(vehicleInput));
+  validateVehicleRegistration(vehicleInput);
+  document.getElementById('sign-out-btn').addEventListener('click', async () => {
+    await ParkingAPI.signOut();
+    window.location.assign('index.html');
+  });
   loadAvailableSlots();
   loadUserBookings();
-
-  const form = document.getElementById('booking-form');
-  if (form) form.addEventListener('submit', handleBookingSubmit);
 });

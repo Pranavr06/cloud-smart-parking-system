@@ -7,10 +7,13 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 
 const SAMPLE_DATA_PATH = path.join(__dirname, '..', 'sample-data', 'parking-data.json');
 const API_HOST = process.env.API_HOST || '127.0.0.1';
 const API_PORT = process.env.API_PORT || 5000;
+const API_URL = process.env.PARKING_API_URL || `http://${API_HOST}:${API_PORT}/api/detection/update`;
+const DETECTION_API_KEY = process.env.DETECTION_API_KEY;
 const INTERVAL_MS = parseInt(process.env.SIMULATION_INTERVAL_MS || '4000', 10);
 
 // Parse CLI flags
@@ -44,18 +47,18 @@ function readSampleData() {
 function sendDetectionUpdate(payload) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(payload);
+    const endpoint = new URL(API_URL);
+    const client = endpoint.protocol === 'https:' ? https : http;
     const options = {
-      hostname: API_HOST,
-      port: API_PORT,
-      path: '/api/detection/update',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(data)
+        'Content-Length': Buffer.byteLength(data),
+        ...(DETECTION_API_KEY ? { 'x-detection-key': DETECTION_API_KEY } : {})
       }
     };
 
-    const req = http.request(options, res => {
+    const req = client.request(endpoint, options, res => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
@@ -155,7 +158,7 @@ async function start() {
   console.log('==================================================');
   console.log('🚗 Smart Parking JSON Detection Simulator Started');
   console.log(`📁 Source File: ${SAMPLE_DATA_PATH}`);
-  console.log(`🌐 Target Cloud API: http://${API_HOST}:${API_PORT}/api/detection/update`);
+  console.log(`🌐 Target Cloud API: ${API_URL}`);
   console.log(`⏱️ Interval: ${INTERVAL_MS}ms | Max Cycles: ${maxCycles === Infinity ? 'Infinite' : maxCycles}`);
   console.log('==================================================');
 

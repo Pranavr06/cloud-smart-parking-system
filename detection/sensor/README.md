@@ -88,6 +88,8 @@ The ESP32 publishes JSON messages to topic `parking/sensor/status`:
 
 ### 6. Hardware-Free Testing with Virtual IoT Sensor Cluster
 
+When sending readings to a production deployment, export the server's `DETECTION_API_KEY` in the simulator process environment. Keep the key private and send requests over HTTPS; the API accepts unauthenticated sensor updates only in non-production development mode.
+
 To test and demonstrate the IoT data flow without physical microcontrollers:
 ```bash
 # Run one cycle

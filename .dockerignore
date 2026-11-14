@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+**/.env
+**/node_modules
+**/npm-debug.log
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/venv
+backend/data
+backend/tests
+detection/cctv/sample_video.mp4
+*.pem
+*.key

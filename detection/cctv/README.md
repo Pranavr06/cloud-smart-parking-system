@@ -4,6 +4,8 @@
 ### 1. Overview
 The CCTV detection module uses **Computer Vision and OpenCV** to automatically detect vehicle occupancy within parking bays from surveillance video feeds.
 
+The deployment uses the CPU-only `opencv-python-headless` package with NumPy and Requests. It does not install PyTorch, CUDA, or GPU runtime libraries; graphical preview flags are not available in this headless package.
+
 ### 2. Processing Pipeline
 1. **Video Ingestion:** Reads video stream from an RTSP camera, webcam, or recorded MP4 footage.
 2. **Grayscale & Filtering:** Converts frame to single-channel luminance, applies Gaussian blur ($5 \times 5$) to mitigate sensor noise and compression artifacts.
@@ -18,6 +20,8 @@ The CCTV detection module uses **Computer Vision and OpenCV** to automatically d
 
 ### 3. Quickstart & Execution
 
+For production API sync, export the server's `DETECTION_API_KEY` in the process environment and target an HTTPS endpoint. Never put the key in source control or a command-line argument that may be saved in shell history.
+
 #### Step 1: Ensure Video & Configuration Exist
 A synthetic 120-frame test video is generated in `sample-video/sample_parking.mp4`. To regenerate it anytime:
 ```bash
@@ -30,17 +34,7 @@ Run detection in headless mode (ideal for servers or background terminal executi
 python detect.py --frames=60
 ```
 
-With graphical visualization window (press 'q' to exit):
-```bash
-python detect.py --show
-```
-
-Targeting a live webcam (device index 0):
-```bash
-python detect.py --video 0 --show
-```
-
 Specifying a custom Cloud API URL:
 ```bash
-python detect.py --api-url http://<YOUR_EC2_IP>:5000/api/detection/update
+python detect.py --api-url https://<YOUR_DEPLOYMENT_HOST>/api/detection/update
 ```

@@ -3,178 +3,79 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SmartPark Cloud - Enterprise Smart Parking Management System</title>
+  <meta name="theme-color" content="#f5f7fa">
+  <meta name="description" content="View parking availability, reserve a bay, and manage facility occupancy.">
+  <title>SmartPark | Parking, made simpler</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/responsive.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Top Navigation -->
   <header class="navbar">
-    <div class="nav-brand">
-      <div class="brand-icon">P</div>
-      <div class="brand-text">
-        <h1>SmartPark <span class="brand-badge">AWS Cloud</span></h1>
-      </div>
-    </div>
-
+    <a class="nav-brand" href="index.html" aria-label="SmartPark home">
+      <div class="brand-icon">P</div><div class="brand-text"><h1>SmartPark <span class="brand-badge">Parking system</span></h1></div>
+    </a>
     <ul class="nav-links">
-      <li><a href="index.html" class="nav-link active">Home</a></li>
-      <li><a href="dashboard.html" class="nav-link">Live Dashboard</a></li>
-      <li><a href="booking.html" class="nav-link">Book a Slot</a></li>
-      <li><a href="admin.html" class="nav-link">Admin Console</a></li>
+      <li><a href="index.html" class="nav-link active">Overview</a></li>
+      <li><a href="dashboard.html" class="nav-link">Availability</a></li>
+      <li><a href="booking.html" class="nav-link">Reservations</a></li>
+      <li hidden data-admin-only><a href="admin.html" class="nav-link">Staff console</a></li>
     </ul>
-
-    <div class="nav-actions">
-      <div class="cloud-status-pill" id="cloud-pill">
-        <span class="pulse-dot"></span>
-        <span id="cloud-status-text">Connecting to AWS...</span>
-      </div>
-    </div>
+    <div class="nav-actions"><a class="nav-link" href="login.html">Sign in</a><div class="cloud-status-pill" id="cloud-pill"><span class="pulse-dot"></span><span id="cloud-status-text">Checking service</span></div></div>
   </header>
 
-  <!-- Hero Section -->
   <main class="app-container">
-    <div style="text-align: center; max-width: 860px; margin: 3rem auto 4rem auto;">
-      <div class="badge badge-source" style="margin-bottom: 1rem; padding: 0.4rem 1rem; font-size: 0.8rem;">
-        ☁️ AWS Cloud Computing Mini-Project
+    <section class="home-hero">
+      <div class="home-copy">
+        <div class="home-eyebrow">Parking operations · Availability at a glance</div>
+        <h2 class="home-title">A clearer view of <span>every parking space.</span></h2>
+        <p class="home-description">Check availability, reserve a bay, and keep your facility moving. Live occupancy updates bring sensor, camera, and simulator data together in one place.</p>
+        <div class="home-actions">
+          <a href="dashboard.html" class="btn btn-primary">View availability <span aria-hidden="true">→</span></a>
+          <a href="booking.html" class="btn btn-secondary">Make a reservation</a>
+        </div>
       </div>
-      <h1 style="font-size: 3rem; line-height: 1.15; margin-bottom: 1.25rem;">
-        Next-Generation <span style="background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Smart Parking</span> Powered by Cloud & Computer Vision
-      </h1>
-      <p style="font-size: 1.15rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 2rem;">
-        Real-time multi-modal parking occupancy detection utilizing AWS DynamoDB, IoT Microcontrollers (ESP32), and OpenCV Computer Vision CCTV processing.
-      </p>
+      <div class="home-visual" aria-label="Illustration of a parking layout">
+        <div class="parking-illustration">
+          <div class="illustration-label"><span>Facility overview</span><span>ZONE A</span></div>
+          <div class="illustration-grid"><div class="illustration-bay free">A01</div><div class="illustration-bay busy">A02</div><div class="illustration-bay free">A03</div><div class="illustration-bay">A04</div><div class="illustration-bay busy">A05</div><div class="illustration-bay free">A06</div><div class="illustration-bay">A07</div><div class="illustration-bay free">A08</div></div>
+        </div>
+      </div>
+    </section>
 
-      <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-        <a href="dashboard.html" class="btn btn-primary" style="padding: 0.85rem 1.75rem; font-size: 1rem;">
-          🚀 View Live Parking Grid
-        </a>
-        <a href="booking.html" class="btn btn-secondary" style="padding: 0.85rem 1.75rem; font-size: 1rem;">
-          🎟️ Reserve a Slot
-        </a>
-      </div>
-    </div>
+    <section class="home-metrics" aria-label="Service status">
+      <div class="home-metric"><strong id="telemetry-db">Checking</strong><span>Storage mode</span></div>
+      <div class="home-metric"><strong>Sensor · Camera · Simulator</strong><span>Occupancy inputs</span></div>
+      <div class="home-metric"><strong id="telemetry-uptime">Checking</strong><span>API uptime</span></div>
+    </section>
 
-    <!-- Live Telemetry Card -->
-    <div class="card" style="margin-bottom: 3rem; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border-glow);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
-        <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
-          ⚡ Live Cloud Telemetry Status
-        </h3>
-        <span class="badge badge-free" id="backend-health-badge">API HEALTHY</span>
+    <section>
+      <div class="section-heading"><div><h2>What would you like to do?</h2><p>Quick access to parking and facility tools.</p></div></div>
+      <div class="portal-grid">
+        <article class="card portal-card"><div class="portal-icon">01</div><h3>Check availability</h3><p>See bay status across each parking zone and refresh live occupancy.</p><a href="dashboard.html">Open availability →</a></article>
+        <article class="card portal-card"><div class="portal-icon">02</div><h3>Reserve a bay</h3><p>Choose an available space, add your vehicle details, and manage your bookings.</p><a href="booking.html">Make a reservation →</a></article>
+        <article class="card portal-card" hidden data-admin-only><div class="portal-icon">03</div><h3>Facility operations</h3><p>Review occupancy, update bays, and inspect recent activity.</p><a href="admin.html">Open staff console →</a></article>
       </div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; text-align: left;">
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase;">Cloud Database</div>
-          <div style="font-size: 1.2rem; font-weight: 700; color: #fff; margin-top: 0.2rem;" id="telemetry-db">AWS DynamoDB (Local Adapter)</div>
-        </div>
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase;">Detection Sources</div>
-          <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-cyan);">JSON / CCTV / IoT ESP32</div>
-        </div>
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase;">Concurrency Model</div>
-          <div style="font-size: 1.2rem; font-weight: 700; color: #34d399;">Atomic Transactions</div>
-        </div>
-        <div>
-          <div style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase;">API Uptime</div>
-          <div style="font-size: 1.2rem; font-weight: 700; color: #fff;" id="telemetry-uptime">Loading...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Navigation Portals Grid -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.75rem; margin-bottom: 3.5rem;">
-      <!-- Driver Dashboard Card -->
-      <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-        <div>
-          <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🚗</div>
-          <h3 style="font-size: 1.35rem; margin-bottom: 0.5rem;">User & Driver Dashboard</h3>
-          <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem;">
-            Inspect live slot occupancy status across parking zones with color-coded markers (FREE, OCCUPIED, RESERVED, UNKNOWN).
-          </p>
-        </div>
-        <a href="dashboard.html" class="btn btn-secondary" style="width: 100%;">Open Driver Dashboard →</a>
-      </div>
-
-      <!-- Booking Card -->
-      <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-        <div>
-          <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🎟️</div>
-          <h3 style="font-size: 1.35rem; margin-bottom: 0.5rem;">Slot Reservation Portal</h3>
-          <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem;">
-            Book an available slot with your vehicle number. Instant reservation confirmation with atomic double-booking protection.
-          </p>
-        </div>
-        <a href="booking.html" class="btn btn-secondary" style="width: 100%;">Book Parking Slot →</a>
-      </div>
-
-      <!-- Admin Console Card -->
-      <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-        <div>
-          <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🛡️</div>
-          <h3 style="font-size: 1.35rem; margin-bottom: 0.5rem;">Admin & Analytics Console</h3>
-          <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem;">
-            Facility management, add/delete parking bays, manual status overrides, detection event history, and occupancy analytics.
-          </p>
-        </div>
-        <a href="admin.html" class="btn btn-secondary" style="width: 100%;">Enter Admin Console →</a>
-      </div>
-    </div>
-
-    <!-- Multi-Source Detection Architecture Overview -->
-    <div class="parking-lot-section" style="padding: 2.5rem;">
-      <h2 style="font-size: 1.6rem; margin-bottom: 1rem; text-align: center;">Unified Multi-Modal Detection Pipeline</h2>
-      <p style="text-align: center; color: var(--text-muted); max-width: 720px; margin: 0 auto 2.5rem auto;">
-        Architected so data sources can be toggled without rewriting the core application layer.
-      </p>
-
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem;">
-        <div class="card" style="background: rgba(15, 23, 42, 0.6);">
-          <div style="font-weight: 700; color: var(--accent-blue); margin-bottom: 0.5rem;">1. JSON Simulation Engine</div>
-          <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5;">
-            Continuous periodic simulator updating slot occupancy cycles, testing concurrent reads and writes, and validating dashboard reactivity.
-          </p>
-        </div>
-        <div class="card" style="background: rgba(15, 23, 42, 0.6);">
-          <div style="font-weight: 700; color: #a855f7; margin-bottom: 0.5rem;">2. OpenCV Computer Vision</div>
-          <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5;">
-            Python-based CCTV frame analysis using adaptive thresholding and contour pixel density detection within designated parking polygons.
-          </p>
-        </div>
-        <div class="card" style="background: rgba(15, 23, 42, 0.6);">
-          <div style="font-weight: 700; color: #10b981; margin-bottom: 0.5rem;">3. IoT Microcontroller (ESP32)</div>
-          <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5;">
-            Ultrasonic & IR proximity sensors measuring bay clearance, publishing MQTT messages to AWS IoT Core and DynamoDB.
-          </p>
-        </div>
-      </div>
-    </div>
+    </section>
   </main>
 
-  <!-- Footer -->
-  <footer class="footer">
-    <p>Cloud-Based Smart Parking Management System • AWS DynamoDB, Node.js, Express & OpenCV</p>
-    <p style="margin-top: 0.25rem;">College Cloud Computing Mini Project</p>
-  </footer>
-
+  <footer class="footer">SmartPark · Cloud based parking management</footer>
   <script src="js/api.js"></script>
+  <script src="js/auth-ui.js"></script>
   <script>
     async function loadTelemetry() {
+      const pill = document.getElementById('cloud-pill');
       try {
         const health = await ParkingAPI.getHealth();
-        document.getElementById('cloud-status-text').textContent = `Cloud Online (${health.databaseMode.toUpperCase()})`;
-        document.getElementById('telemetry-db').textContent = `DynamoDB [${health.databaseMode.toUpperCase()}]`;
-        document.getElementById('telemetry-uptime').textContent = `${health.uptimeSeconds}s active`;
+        document.getElementById('cloud-status-text').textContent = `Service online · ${health.databaseMode.toUpperCase()}`;
+        document.getElementById('telemetry-db').textContent = health.databaseMode.toUpperCase();
+        document.getElementById('telemetry-uptime').textContent = `${health.uptimeSeconds}s`;
+        pill.classList.remove('service-offline');
       } catch (err) {
-        document.getElementById('cloud-status-text').textContent = 'Cloud Disconnected';
-        document.getElementById('cloud-pill').style.borderColor = 'rgba(239, 68, 68, 0.4)';
-        document.getElementById('cloud-pill').style.background = 'rgba(239, 68, 68, 0.1)';
-        document.getElementById('cloud-pill').style.color = '#ef4444';
+        document.getElementById('cloud-status-text').textContent = 'Service unavailable';
+        document.getElementById('telemetry-db').textContent = 'Unavailable';
+        document.getElementById('telemetry-uptime').textContent = '—';
+        pill.classList.add('service-offline');
       }
     }
     loadTelemetry();

@@ -7,6 +7,9 @@ const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 require('dotenv').config();
 
 const region = process.env.AWS_REGION || 'us-east-1';
+if (process.env.NODE_ENV === 'production' && !process.env.AWS_REGION) {
+  throw new Error('Production requires an explicit AWS_REGION.');
+}
 const clientConfig = { region };
 
 // If using DynamoDB Local

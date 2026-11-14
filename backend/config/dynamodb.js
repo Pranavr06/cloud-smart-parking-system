@@ -14,11 +14,22 @@ const {
   QueryCommand,
   TransactWriteCommand
 } = require('@aws-sdk/lib-dynamodb');
+const { DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { docClient } = require('./aws');
 require('dotenv').config();
 
 const DB_MODE = process.env.DB_MODE || 'local';
-const LOCAL_STORE_FILE = path.join(__dirname, '..', 'data', 'local_dynamodb_store.json');
+const SINGLE_INSTANCE_MODE = process.env.DEPLOYMENT_MODE === 'single-instance';
+const TABLE_NAMES = [
+  process.env.DYNAMODB_TABLE_PARKING_SLOTS || 'ParkingSlots',
+  process.env.DYNAMODB_TABLE_BOOKINGS || 'Bookings',
+  process.env.DYNAMODB_TABLE_DETECTION_HISTORY || 'DetectionHistory'
+];
+if (process.env.NODE_ENV === 'production' && DB_MODE !== 'aws' && !(DB_MODE === 'local' && SINGLE_INSTANCE_MODE)) {
+  throw new Error('Production requires DynamoDB, or explicitly configured single-instance local persistence.');
+}
+const DATA_DIR = process.env.LOCAL_DATA_DIR || path.join(__dirname, '..', 'data');
+const LOCAL_STORE_FILE = path.join(DATA_DIR, 'local_dynamodb_store.json');
 
 // In-Memory store for local development mode
 let localTables = {
@@ -28,10 +39,11 @@ let localTables = {
 };
 
 // Ensure data directory exists
-const dataDir = path.join(__dirname, '..', 'data');
+const dataDir = DATA_DIR;
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
+if (DB_MODE === 'local') fs.chmodSync(dataDir, 0o700);
 
 // Load existing local store if available, or seed from detection/sample-data/parking-data.json
 function initLocalStore() {
@@ -69,7 +81,8 @@ function initLocalStore() {
 function saveLocalStore() {
   if (DB_MODE === 'local') {
     try {
-      fs.writeFileSync(LOCAL_STORE_FILE, JSON.stringify(localTables, null, 2), 'utf-8');
+      fs.writeFileSync(LOCAL_STORE_FILE, JSON.stringify(localTables, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      fs.chmodSync(LOCAL_STORE_FILE, 0o600);
     } catch (err) {
       console.error('[DB] Failed to persist local store:', err.message);
     }
@@ -86,6 +99,17 @@ if (DB_MODE === 'local') {
 const db = {
   getMode() {
     return DB_MODE;
+  },
+
+  async checkHealth() {
+    if (DB_MODE === 'local') return { status: 'HEALTHY' };
+    if (!dynamoClient) return { status: 'DEGRADED', reason: 'DynamoDB client is unavailable' };
+    try {
+      await Promise.all(TABLE_NAMES.map(TableName => dynamoClient.send(new DescribeTableCommand({ TableName }))));
+      return { status: 'HEALTHY' };
+    } catch (err) {
+      return { status: 'DEGRADED', reason: err.name || 'DynamoDB check failed' };
+    }
   },
 
   async getItem({ TableName, Key }) {
