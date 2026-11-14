@@ -51,6 +51,12 @@ app.get('/admin.html', async (req, res) => {
   }
 });
 
+// Make sign-in the first page for visitors opening the site root.
+app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.redirect(302, '/login.html');
+});
+
 // Serve public frontend files after the protected console route.
 app.use(express.static(frontendPath));
 
@@ -95,12 +101,6 @@ app.all('/api/*', (req, res) => {
     success: false,
     error: `Endpoint not found: ${req.method} ${req.originalUrl}`
   });
-});
-
-// Send the site root directly to sign-in so first-time visitors do not land
-// on the public marketing/dashboard shell before seeing authentication.
-app.get('/', (req, res) => {
-  res.redirect(302, '/login.html');
 });
 
 // Global Error Handler
