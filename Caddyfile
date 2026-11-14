@@ -4,7 +4,7 @@
 }
 
 54.79.97.73 {
-	redir https://smartpark.54.79.97.73.nip.io{uri} permanent
+	redir https://smartpark.dpdns.org{uri} permanent
 	tls {
 		issuer acme {
 			profile shortlived
@@ -12,7 +12,7 @@
 	}
 }
 
-smartpark.54.79.97.73.nip.io {
+smartpark.54.79.97.73.nip.io, smartpark.dpdns.org {
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"

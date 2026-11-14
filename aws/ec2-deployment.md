@@ -1,6 +1,6 @@
 # Existing EC2 Docker deployment
 
-This deployment reuses the existing Sentinel EC2 host and adds a separate parking app container plus a Caddy HTTPS proxy. It does not create another EC2 instance. The current preview is `https://smartpark.54.79.97.73.nip.io`; the bare IP redirects there. This IP-mapped hostname is temporary. For a branded hostname, point a domain you control at the EC2 public IP, update the hostname and redirect in `Caddyfile`, then recreate Caddy so it can obtain a certificate for the new name.
+This deployment reuses the existing Sentinel EC2 host and adds a separate parking app container plus a Caddy HTTPS proxy. It does not create another EC2 instance. The current hostname is `https://smartpark.dpdns.org`; the bare IP redirects there. Its DNS A record points to the EC2 public IP (`54.79.97.73`), and Caddy obtains and renews the HTTPS certificate automatically. The previous IP-mapped `nip.io` hostname remains configured as an alternate route.
 
 ## Runtime
 
