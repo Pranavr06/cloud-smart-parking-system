@@ -97,9 +97,10 @@ app.all('/api/*', (req, res) => {
   });
 });
 
-// Fallback route for single-page navigation to landing
+// Send the site root directly to sign-in so first-time visitors do not land
+// on the public marketing/dashboard shell before seeing authentication.
 app.get('/', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'index.html'));
+  res.redirect(302, '/login.html');
 });
 
 // Global Error Handler
